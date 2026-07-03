@@ -1,0 +1,2512 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Nuclear Forest</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:#000; overflow:hidden; font-family:monospace; }
+  canvas { display:block; }
+  #loading {
+    position:absolute; top:0; left:0; width:100%; height:100%;
+    background:#000a00; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; z-index:100;
+  }
+  #loading h1 { color:#22ff44; font-size:48px; text-shadow:0 0 20px #00ff00; margin-bottom:20px; }
+  #loading p  { color:#88cc88; font-size:18px; margin:6px 0; }
+  #bar-outer  { width:320px; height:18px; border:2px solid #22aa44; margin-top:18px; }
+  #bar-inner  { height:100%; width:0%; background:#22ff44; transition:width 0.15s; }
+
+  #title-screen, #mode-screen {
+    position:absolute; top:0; left:0; width:100%; height:100%;
+    background:#000a00; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; z-index:110;
+  }
+  #mode-screen { display:none; }
+  #title-screen h1 { color:#22ff44; font-size:64px; text-shadow:0 0 24px #00ff00; margin-bottom:14px; letter-spacing:2px; }
+  #title-screen p, #mode-screen p { color:#55cc66; font-size:16px; margin:4px 0 30px; }
+  #mode-screen h2 { color:#22ff44; font-size:30px; margin-bottom:28px; }
+
+  .nf-btn {
+    font-family:monospace; font-size:22px; font-weight:bold; color:#aaffaa;
+    background:rgba(255,255,255,0.06); border:2px solid #22ff44; border-radius:4px;
+    padding:16px 48px; cursor:pointer; transition:background 0.15s, transform 0.1s;
+  }
+  .nf-btn:hover { background:rgba(34,255,68,0.18); transform:scale(1.03); }
+  .nf-btn:active { transform:scale(0.98); }
+
+  .mode-cards { display:flex; gap:36px; }
+  .mode-card {
+    width:290px; padding:22px; border-radius:6px; cursor:pointer;
+    background:rgba(255,255,255,0.05); border:2px solid #444; text-align:center;
+    transition:background 0.15s, border-color 0.15s, transform 0.1s;
+  }
+  .mode-card:hover { transform:scale(1.03); }
+  .mode-card.peaceful:hover { border-color:#66ccff; background:rgba(102,204,255,0.10); }
+  .mode-card.survival:hover { border-color:#ff6644; background:rgba(255,102,68,0.10); }
+  .mode-card h3 { font-size:24px; margin-bottom:12px; }
+  .mode-card.peaceful h3 { color:#66ccff; }
+  .mode-card.survival h3 { color:#ff6644; }
+  .mode-card p { color:#cddccd; font-size:13px; margin:4px 0; line-height:1.5; }
+  .mode-card .key-hint { margin-top:14px; font-weight:bold; font-size:14px; }
+  .mode-card.peaceful .key-hint { color:#66ccff; }
+  .mode-card.survival .key-hint { color:#ff6644; }
+
+  /* ── Full inventory + crafting screen ── */
+  #inv-screen {
+    position:absolute; top:0; left:0; width:100%; height:100%;
+    background:rgba(0,10,0,0.82); display:none; flex-direction:column;
+    align-items:center; justify-content:center; z-index:50;
+    font-family:monospace;
+  }
+  #inv-screen h2 { color:#22ff44; font-size:26px; margin-bottom:16px; }
+  #inv-screen h3 { color:#88cc88; font-size:16px; margin:20px 0 10px; }
+  .inv-row { display:grid; grid-template-columns:repeat(5,56px); gap:6px; }
+  .inv-slot, .craft-cell, #craft-out {
+    width:56px; height:56px; background:rgba(255,255,255,0.07);
+    border:2px solid #3a5a3a; border-radius:4px; position:relative;
+    cursor:pointer; display:flex; align-items:center; justify-content:center;
+  }
+  .inv-slot:hover, .craft-cell:hover, #craft-out:hover { border-color:#22ff44; }
+  .inv-slot.selected { border-color:#ffee44; background:rgba(255,238,68,0.12); }
+  .item-icon { width:34px; height:34px; border-radius:5px; }
+  .item-icon.log   { background:linear-gradient(90deg,#6a421c,#8a5a2a); border-radius:8px/16px; }
+  .item-icon.stone { background:radial-gradient(circle at 35% 30%,#a8a297,#6f6a60); border-radius:45%; }
+  .item-icon.tinyRock { background:radial-gradient(circle at 35% 30%,#c4beb2,#8a847a); border-radius:45%; width:22px; height:22px; }
+  .item-icon.knife { background:linear-gradient(135deg,#e8eef4 55%,#5a3a1a 55%); clip-path:polygon(10% 90%, 60% 10%, 90% 30%, 35% 100%); width:38px; height:38px; }
+  .item-count {
+    position:absolute; bottom:2px; right:5px; color:#fff;
+    font-size:13px; font-weight:bold; text-shadow:1px 1px 0 #000;
+  }
+  .item-label { position:absolute; top:2px; left:4px; color:#9c9; font-size:8px; }
+  #craft-area { display:flex; align-items:center; gap:22px; }
+  #craft-grid { display:grid; grid-template-columns:repeat(3,56px); gap:6px; }
+  #craft-arrow { color:#22ff44; font-size:34px; }
+  #craft-out.ready { border-color:#ffee44; box-shadow:0 0 14px rgba(255,238,68,0.35); }
+  #inv-hint { color:#7a9; font-size:13px; margin-top:20px; text-align:center; line-height:1.7; }
+</style>
+</head>
+<body>
+
+<!-- Title screen -->
+<div id="title-screen">
+  <h1>NUCLEAR FOREST</h1>
+  <p>WASD: move &nbsp; MOUSE: look &nbsp; SPACE: jump &nbsp; SHIFT: sprint</p>
+  <button class="nf-btn" id="play-btn">PLAY</button>
+</div>
+
+<!-- Mode selection screen -->
+<div id="mode-screen">
+  <h2>CHOOSE YOUR MODE</h2>
+  <div class="mode-cards">
+    <div class="mode-card peaceful" id="mode-peaceful">
+      <h3>PEACEFUL</h3>
+      <p>No monsters, no radiation.</p>
+      <p>Explore, watch wildlife,</p>
+      <p>walk the mountains freely.</p>
+      <div class="key-hint">CLICK TO START</div>
+    </div>
+    <div class="mode-card survival" id="mode-survival">
+      <h3>SURVIVAL</h3>
+      <p>Predators can kill you.</p>
+      <p>Day/night cycle.</p>
+      <p>Radiation bubble at the plant.</p>
+      <div class="key-hint">CLICK TO START</div>
+    </div>
+  </div>
+</div>
+
+<!-- Full inventory + crafting screen (toggle with E / Tab in game) -->
+<div id="inv-screen">
+  <h2>INVENTORY</h2>
+  <div class="inv-row" id="inv-grid"></div>
+  <h3>CRAFTING</h3>
+  <div id="craft-area">
+    <div id="craft-grid"></div>
+    <div id="craft-arrow">&rarr;</div>
+    <div id="craft-out"></div>
+  </div>
+  <p id="inv-hint">Click an item to select it, then click a crafting cell to place one.<br>
+  Click a placed item to take it back. Knife = 4 logs + 1 stone (or tiny rock).<br>
+  Press E or TAB to close.</p>
+</div>
+
+<!-- Loading screen (world generation) -->
+<div id="loading" style="display:none;">
+  <h1>NUCLEAR FOREST</h1>
+  <p id="load-msg">Initializing...</p>
+  <div id="bar-outer"><div id="bar-inner"></div></div>
+</div>
+
+<!-- Three.js CDN -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+// WORLD GENERATION
+// ═══════════════════════════════════════════════════════════════
+
+function seededRand(seed) {
+    var s = seed >>> 0;
+    return function () {
+        s = (Math.imul(1664525, s) + 1013904223) >>> 0;
+        return s / 4294967296;
+    };
+}
+function smoothstep(t) { return t * t * (3 - 2 * t); }
+function lerp(a, b, t) { return a + (b - a) * t; }
+function gaussian(dx, dz, spread) {
+    return Math.exp(-(dx * dx + dz * dz) / (2 * spread * spread));
+}
+
+var TERRAIN_MAX_H = 950; // world-unit peak height (~12,000-13,000 ft scale)
+
+// ── World scale constants ──────────────────────────────────────
+// Grid resolution increased from 513 to 713 (not just the world-unit span)
+// so mountains placed near the outer part of the map have enough room for
+// their full gaussian falloff to taper to the ground before hitting the
+// hard edge of the heightmap array — previously they could get visibly
+// clipped by the map boundary. QUAD_SCALE (world units per grid cell) is
+// unchanged, so this also extends the total playable world by ~400 units
+// of radius each direction (roughly a mile, given the ~13 ft/unit scale
+// implied by the mountain height being "12,000-13,000 ft" at 950 units).
+// 10 miles: doubled QUAD_SCALE (world units per grid cell) instead of
+// doubling the grid resolution — same vertex/memory budget, so the far
+// bigger world doesn't cost any extra rendering or generation time.
+var GRID_SIZE    = 1001;
+var QUAD_SCALE   = 8;
+var WORLD_SIZE   = (GRID_SIZE - 1) * QUAD_SCALE; // 8000 (~10 miles at the ~800 units/mile scale used before)
+var WORLD_CENTER = WORLD_SIZE / 2;               // 4000
+var GRID_CENTER  = (GRID_SIZE - 1) / 2;           // 500
+
+function generateHeightmap(seed) {
+    var SIZE = GRID_SIZE, NOISE_SIZE = 64;
+    var rand = seededRand(seed);
+    var table = new Float32Array(NOISE_SIZE * NOISE_SIZE);
+    for (var i = 0; i < table.length; i++) table[i] = rand();
+
+    function tableAt(ix, iz) {
+        ix = ((ix % NOISE_SIZE) + NOISE_SIZE) % NOISE_SIZE;
+        iz = ((iz % NOISE_SIZE) + NOISE_SIZE) % NOISE_SIZE;
+        return table[iz * NOISE_SIZE + ix];
+    }
+    function sampleNoise(nx, nz) {
+        var ix = Math.floor(nx), iz = Math.floor(nz);
+        var fx = smoothstep(nx - ix), fz = smoothstep(nz - iz);
+        return lerp(lerp(tableAt(ix,iz), tableAt(ix+1,iz), fx),
+                    lerp(tableAt(ix,iz+1), tableAt(ix+1,iz+1), fx), fz);
+    }
+
+    var MAX_H = TERRAIN_MAX_H;
+    var CENTER = GRID_CENTER;
+
+    // ── Layer 1: rolling lowland fBm — normalized shape (0..1), amplitude
+    // applied later once we know each vertex's distance to the nearest
+    // mountain massif, so valley floors stay flat and terrain only gets
+    // bumpy as it approaches a range.
+    var octaves = [{freq:1,amp:1},{freq:2,amp:0.5},{freq:4,amp:0.25},{freq:8,amp:0.125}];
+    var maxAmp = 1.875;
+    var baseNoise01 = new Float32Array(SIZE * SIZE);
+    var raw = new Float32Array(SIZE * SIZE);
+    for (var z = 0; z < SIZE; z++) {
+        for (var x = 0; x < SIZE; x++) {
+            var v = 0;
+            for (var o = 0; o < octaves.length; o++) {
+                v += sampleNoise((x/(SIZE-1))*NOISE_SIZE*octaves[o].freq,
+                                 (z/(SIZE-1))*NOISE_SIZE*octaves[o].freq) * octaves[o].amp;
+            }
+            baseNoise01[z*SIZE+x] = v/maxAmp; // 0..1
+        }
+    }
+
+    // ── Layer 2: explicit massif envelopes ─────────────────────────
+    // A handful of WIDE, smooth gaussian humps decide the overall shape
+    // of each range (few peaks, wide bases). This envelope is what bounds
+    // the final silhouette — ridged detail below can only ever modulate
+    // a narrow band around it, so it can add ridge texture but can never
+    // independently swing from 0 to full height a few cells over (that
+    // was the actual cause of the needle-spike bug: a threshold mask only
+    // gated WHERE detail applied, but the detail itself still swung the
+    // FULL 0..MAX_H range on its own inside that gated region).
+    // Mountains form in natural CLUSTERS instead of being scattered
+    // independently or forced to hug the map border. A cluster can land
+    // anywhere valid — close to the plant or far at the edge, no fixed
+    // ring — and once one mountain exists there, it's weighted to bring
+    // 1-3 more nearby (a real range), rather than every peak being an
+    // isolated, evenly-spaced dot.
+    //
+    // Placement still picks each massif's spread FIRST, then keeps it at
+    // least 2.1 spread-radii from every grid edge — that's roughly where
+    // a gaussian has fully tapered to nothing — so mountains near the
+    // edge of the world always finish forming instead of getting cut off
+    // by the boundary of the heightmap array.
+    var rand2 = seededRand(seed ^ 0xdeadbeef);
+
+    var densityRoll = rand2();
+    var numClusters;
+    if (densityRoll < 0.08)      numClusters = 0;                         // rare pure-forest world
+    else if (densityRoll < 0.28) numClusters = 1 + Math.floor(rand2()*2); // 1-2 ranges
+    else                          numClusters = 3 + Math.floor(rand2()*3); // 3-5 ranges
+
+    // NOTE: spreads are in GRID cells. When QUAD_SCALE doubled (world went
+    // 5→10 miles) the old 90-140 cell spreads silently became 720-1120
+    // world-unit-radius monsters that formed a wall around spawn — halving
+    // them here restores the intended real-world mountain footprint.
+    // ~2400 world units (~3 miles). Anything closer and multiple clusters
+    // pile up right at the minimum-distance circle — every peak ends up the
+    // same distance from spawn, which reads as a RING of mountains wrapped
+    // around the player. Keeping them in the outer map makes them horizon
+    // scenery in whatever directions they naturally rolled, with real gaps.
+    var minDistFromCenter = 300;
+    var massifs = [];
+
+    for (var c = 0; c < numClusters; c++) {
+        var clusterX = -1, clusterZ = -1;
+        for (var attempt = 0; attempt < 60; attempt++) {
+            var trySpread = 45 + rand2()*25;
+            var tryMargin = trySpread * 2.1;
+            var span = (SIZE-1) - tryMargin*2;
+            if (span <= 0) continue;
+            var cx = tryMargin + rand2()*span;
+            var cz = tryMargin + rand2()*span;
+            var cdx = cx-CENTER, cdz = cz-CENTER;
+            if (Math.sqrt(cdx*cdx+cdz*cdz) < minDistFromCenter) continue;
+            var clusterTooClose = false;
+            for (var mi0 = 0; mi0 < massifs.length; mi0++) {
+                var cddx = cx-massifs[mi0].x, cddz = cz-massifs[mi0].z;
+                if (Math.sqrt(cddx*cddx+cddz*cddz) < 200) { clusterTooClose = true; break; }
+            }
+            if (clusterTooClose) continue;
+            clusterX = cx; clusterZ = cz;
+            break;
+        }
+        if (clusterX < 0) continue;
+
+        // If there's one mountain here, there's usually more nearby.
+        var sizeRoll = rand2(), clusterSize;
+        if (sizeRoll < 0.15)      clusterSize = 1;
+        else if (sizeRoll < 0.55) clusterSize = 2;
+        else if (sizeRoll < 0.85) clusterSize = 3;
+        else                       clusterSize = 4;
+
+        for (var s = 0; s < clusterSize; s++) {
+            for (var attempt2 = 0; attempt2 < 40; attempt2++) {
+                var spread = 45 + rand2()*25;
+                var edgeMargin = spread * 2.1;
+                var offAngle = rand2()*Math.PI*2;
+                var offDist = (s===0) ? 0 : spread*0.9 + rand2()*spread*1.1;
+                var mx = clusterX + Math.cos(offAngle)*offDist;
+                var mz = clusterZ + Math.sin(offAngle)*offDist;
+                if (mx<edgeMargin || mx>(SIZE-1-edgeMargin) || mz<edgeMargin || mz>(SIZE-1-edgeMargin)) continue;
+                // members respect the center exclusion too — otherwise
+                // peaks drift inward of the cluster minimum and rebuild
+                // the ring around spawn one mountain at a time
+                var mdxC = mx-CENTER, mdzC = mz-CENTER;
+                if (Math.sqrt(mdxC*mdxC+mdzC*mdzC) < minDistFromCenter) continue;
+                var tooClose = false;
+                for (var mi = 0; mi < massifs.length; mi++) {
+                    var ddx = mx-massifs[mi].x, ddz = mz-massifs[mi].z;
+                    if (Math.sqrt(ddx*ddx+ddz*ddz) < 70) { tooClose = true; break; }
+                }
+                if (tooClose) continue;
+                massifs.push({ x: mx, z: mz, spread: spread, peakH: 700 + rand2()*220 });
+                break;
+            }
+        }
+    }
+
+    var envelope = new Float32Array(SIZE * SIZE);
+    for (var z = 0; z < SIZE; z++) {
+        for (var x = 0; x < SIZE; x++) {
+            var dxC = x - CENTER, dzC = z - CENTER;
+            var distC = Math.sqrt(dxC*dxC + dzC*dzC);
+            // Only flatten the plant's field itself (~640 world units = 80
+            // grid cells) — no wide forced ring, so mountains that happen
+            // to spawn near the center can rise right at the field's edge.
+            var centerFalloff = smoothstep(Math.max(0, Math.min(1, (distC - 55) / 60)));
+            var best = 0;
+            for (var mi = 0; mi < massifs.length; mi++) {
+                var mm = massifs[mi];
+                var g = mm.peakH * gaussian(x-mm.x, z-mm.z, mm.spread);
+                if (g > best) best = g;
+            }
+            envelope[z*SIZE+x] = best * centerFalloff;
+        }
+    }
+
+    // Apply base-terrain amplitude now that we know each vertex's proximity
+    // to a mountain massif: flat valley floor far from any range, rising
+    // into rougher foothills as the envelope value picks up nearby.
+    for (var i = 0; i < raw.length; i++) {
+        var proximity = Math.max(0, Math.min(1, envelope[i] / 140));
+        var amplitude = lerp(4, 42, proximity);
+        raw[i] = baseNoise01[i] * amplitude;
+    }
+
+    // ── Layer 3: gentle surface detail — modulates the envelope ──
+    // Plain smooth fBm, NOT ridged/folded noise. Ridged noise ("1-abs(2n-1)")
+    // is designed to produce thin sharp ridge LINES by construction — that's
+    // exactly what read as spikes sticking out of the mountains. Ordinary
+    // smooth noise gives rolling, rounded surface variation instead.
+    for (var z = 0; z < SIZE; z++) {
+        for (var x = 0; x < SIZE; x++) {
+            var idx = z*SIZE+x;
+            if (envelope[idx] <= 0.5) continue;
+
+            var warpX = x + (sampleNoise(x*0.05+50, z*0.05+50) - 0.5) * 40;
+            var warpZ = z + (sampleNoise(x*0.05+90, z*0.05+90) - 0.5) * 40;
+
+            var freq = 1.0, amp = 1.0, sum = 0, totalAmp = 0;
+            for (var o = 0; o < 3; o++) {
+                var nx = (warpX/(SIZE-1)) * NOISE_SIZE * freq;
+                var nz = (warpZ/(SIZE-1)) * NOISE_SIZE * freq;
+                sum += sampleNoise(nx, nz) * amp;
+                totalAmp += amp;
+                freq *= 2.0;
+                amp *= 0.5;
+            }
+            var smooth = sum / totalAmp; // 0..1
+
+            // Gentle surface undulation only, ±14% around the smooth envelope.
+            raw[idx] += envelope[idx] * (0.86 + 0.14*smooth);
+        }
+    }
+
+    // ── Thermal erosion — clamp outlier spikes toward their local average ──
+    // (Moving mass to a single steepest neighbor can pile up and CREATE spikes;
+    // clamping toward the 8-neighbor average is stable and only removes them.)
+    var TALUS = 14; // max height diff a slope can hold before material slides
+    var neighborOffsets = [[-1,-1],[0,-1],[1,-1],[-1,0],[1,0],[-1,1],[0,1],[1,1]];
+    for (var pass = 0; pass < 4; pass++) {
+        var next = raw.slice();
+        for (var z = 1; z < SIZE-1; z++) {
+            for (var x = 1; x < SIZE-1; x++) {
+                var idx = z*SIZE+x, h = raw[idx];
+                var sum = 0;
+                for (var n = 0; n < 8; n++) {
+                    var nxp = x + neighborOffsets[n][0], nzp = z + neighborOffsets[n][1];
+                    sum += raw[nzp*SIZE+nxp];
+                }
+                var avgNeighbor = sum * 0.125;
+                if (h - avgNeighbor > TALUS)      next[idx] = avgNeighbor + TALUS;
+                else if (avgNeighbor - h > TALUS) next[idx] = avgNeighbor - TALUS;
+            }
+        }
+        raw = next;
+    }
+
+    // Removed: the old knife-edge sharpening pass (pow exponent on the top
+    // 38% of the range) was adding pointy summit spikes on every massif.
+    // The smooth gaussian envelope + gentle fBm detail above already gives
+    // a normal rounded mountain profile without it.
+
+    raw.massifs = massifs; // exposed so spawn placement can steer clear of them directly
+    return raw;
+}
+
+function buildTerrainMesh(hmap) {
+    var SEGS=GRID_SIZE-1, SIZE=GRID_SIZE, WORLD=WORLD_SIZE;
+    var geometry = new THREE.PlaneGeometry(WORLD, WORLD, SEGS, SEGS);
+    geometry.rotateX(-Math.PI/2);
+    var posAttr = geometry.attributes.position;
+    var colors = new Float32Array(SIZE*SIZE*3);
+
+    // Cheap hash — no Math.sin, no allocations
+    function hash2(x, z) {
+        var ix = x|0, iz = z|0;
+        var n = ix*374761393 + iz*668265263;
+        n = (n ^ (n >>> 13)) * 1274126177;
+        return ((n ^ (n >>> 16)) & 0x7fffffff) / 0x7fffffff;
+    }
+
+    for (var row = 0; row < SIZE; row++) {
+        for (var col = 0; col < SIZE; col++) {
+            var vi = row*SIZE+col;
+            var h = hmap[vi];
+            posAttr.setY(vi, h);
+
+            // Slope from 4-neighbor finite difference
+            var hL = col > 0      ? hmap[row*SIZE+(col-1)] : h;
+            var hR = col < SIZE-1 ? hmap[row*SIZE+(col+1)] : h;
+            var hD = row > 0      ? hmap[(row-1)*SIZE+col] : h;
+            var hU = row < SIZE-1 ? hmap[(row+1)*SIZE+col] : h;
+            var sx = (hR-hL)*0.125, sz = (hU-hD)*0.125;
+            var slope = Math.min(1.0, Math.sqrt(sx*sx+sz*sz));
+
+            // Noise — cheap integer hash at 3 scales, no allocations
+            var n1 = (hash2(col>>2, row>>2) - 0.5) * 0.10; // broad (~4-cell patches)
+            var n2 = (hash2(col,    row   ) - 0.5) * 0.04; // per-vertex fine
+            var noise = n1 + n2;
+
+            var hn = h * (1.0/TERRAIN_MAX_H);
+
+            // Zone colors — all inline scalars, no arrays
+            var mr=0.30+noise, mg=0.23+noise*0.5, mb=0.14+n2;    // mud
+            var gr=0.17+n1*0.6, gg=0.44+n1, gb=0.11+n2;          // grass
+            var sr=0.32+n1*0.8, sg=0.30+n1*0.6, sb=0.14+n2;      // scrub
+            var dr=0.42+noise*0.6, dg=0.34+noise*0.4, db=0.22+n2; // dirt
+            var rr2=0.50+noise*0.4, rg2=0.47+noise*0.4, rb2=0.43+noise*0.3; // rock
+            var swr=0.88+n2*0.2, swg=0.91+n2*0.2, swb=0.96+n2*0.1; // snow
+            var cr=0.46+noise*0.3, cg=0.42+noise*0.3, cb=0.38+n2*0.3; // cliff
+
+            // Smooth band helper (inlined for speed)
+            function sb2(v,lo,hi){if(v<=lo)return 0;if(v>=hi)return 1;var t=(v-lo)/(hi-lo);return t*t*(3-2*t);}
+
+            // Grass owns the lowland; summits go rock, and snow caps only
+            // appear on mountains near the END OF THE MAP — the far border
+            // ranges get white peaks, inland mountains stay bare rock.
+            var br, bg, bb2, t2;
+            if (hn < 0.50) {
+                br=gr; bg=gg; bb2=gb;
+            } else if (hn < 0.64) {
+                t2=sb2(hn,0.50,0.64); br=lerp(gr,rr2,t2); bg=lerp(gg,rg2,t2); bb2=lerp(gb,rb2,t2);
+            } else {
+                var edgeDist = Math.min(col, row, SIZE-1-col, SIZE-1-row); // grid cells to nearest map edge
+                var snowAllowed = 1 - sb2(edgeDist, 150, 220);             // 1 at the border, fading to 0 inland
+                var snowT = (hn >= 0.75) ? 1 : sb2(hn, 0.64, 0.75);
+                var sMix = snowT * snowAllowed;
+                br=lerp(rr2,swr,sMix); bg=lerp(rg2,swg,sMix); bb2=lerp(rb2,swb,sMix);
+            }
+
+            // Mountain flanks lose their grass EXCEPT where trees can grow:
+            // trees only take root on gentle slopes, so rockiness scales
+            // with both altitude and steepness — flat benches partway up a
+            // mountain (the forested spots) keep their grass, while the
+            // steep unforested faces between them go bare rock.
+            var mountainRock = sb2(hn, 0.16, 0.40) * (0.30 + 0.70 * sb2(slope, 0.08, 0.30));
+            br=lerp(br,rr2,mountainRock); bg=lerp(bg,rg2,mountainRock); bb2=lerp(bb2,rb2,mountainRock);
+
+            // Muddy trampled ring around the power plant — full mud right
+            // around the plant footprint, fading back into grass ~10 units
+            // past the pad's edge.
+            var wxF = col*QUAD_SCALE, wzF = row*QUAD_SCALE;
+            var pdxF = wxF-WORLD_CENTER, pdzF = wzF-WORLD_CENTER;
+            var pdF = Math.sqrt(pdxF*pdxF+pdzF*pdzF);
+            var PLANT_EDGE = 95; // just past the paved pad + fence
+            if (pdF < PLANT_EDGE + 10) {
+                var mudMix = pdF < PLANT_EDGE ? 1 : 1 - (pdF - PLANT_EDGE) / 10;
+                br=lerp(br,mr,mudMix); bg=lerp(bg,mg,mudMix); bb2=lerp(bb2,mb,mudMix);
+            }
+
+            // Slope: blend toward cliff rock on steep faces
+            var cliffBlend = slope<0.35?0:slope>0.75?1:(slope-0.35)*(1/0.40);
+            cliffBlend = cliffBlend*cliffBlend*(3-2*cliffBlend);
+            br=lerp(br,cr,cliffBlend); bg=lerp(bg,cg,cliffBlend); bb2=lerp(bb2,cb,cliffBlend);
+
+            // Concave valley darkening
+            var concave = Math.max(0, ((hL+hR+hD+hU)*0.25 - h) * (0.12/8.0));
+            colors[vi*3]   = Math.max(0, br-concave);
+            colors[vi*3+1] = Math.max(0, bg-concave);
+            colors[vi*3+2] = Math.max(0, bb2-concave);
+        }
+    }
+
+    geometry.setAttribute('color', new THREE.BufferAttribute(colors,3));
+    geometry.computeVertexNormals();
+    var terrainMeshOut = new THREE.Mesh(geometry, new THREE.MeshLambertMaterial({vertexColors:true}));
+    terrainMeshOut.receiveShadow = true; // the player's shadow falls on the ground
+    return terrainMeshOut;
+}
+
+function generateTrees(hmap, seed) {
+    var SIZE=GRID_SIZE, WORLD=WORLD_SIZE, G2W=WORLD/(SIZE-1);
+    var rand = seededRand(seed ^ 0xf00dcafe);
+    var trees = [], attempts = 0;
+    // Only the plant's own footprint (fence/buildings) needs to stay
+    // completely clear. Beyond that out to ~640 units is the "main field"
+    // around the plant — sparse trees/rocks instead of totally bare
+    // ground, thinning out the closer in and reaching full forest density
+    // past the old hard cutoff.
+    var PLANT_CLEAR_RADIUS = 115;
+    var FIELD_RADIUS = 640;
+    // No tree-count cap: the loop samples a fixed number of candidate
+    // spots proportional to the map area, and every candidate that passes
+    // the terrain filters becomes a tree — density decides the total, not
+    // an arbitrary limit.
+    var TREE_SAMPLES = 82000;
+    while (attempts < TREE_SAMPLES) {
+        attempts++;
+        var gx=Math.floor(rand()*SIZE), gz=Math.floor(rand()*SIZE);
+        var wx=gx*G2W, wz=gz*G2W;
+        var dxW=wx-WORLD_CENTER, dzW=wz-WORLD_CENTER;
+        var distFromPlant = Math.sqrt(dxW*dxW+dzW*dzW);
+        if (distFromPlant < PLANT_CLEAR_RADIUS) continue;
+        if (distFromPlant < FIELD_RADIUS) {
+            // Sparse field zone: density ramps from ~10% right outside the
+            // clearing up to full density by FIELD_RADIUS.
+            var fieldT = (distFromPlant - PLANT_CLEAR_RADIUS) / (FIELD_RADIUS - PLANT_CLEAR_RADIUS);
+            var keepChance = 0.10 + fieldT*0.55;
+            if (rand() > keepChance) continue;
+        }
+        var idx=gz*SIZE+gx, h=hmap[idx];
+        if (h < 2) continue;
+        var steep=false;
+        var minNh = h; // lowest ground among this cell and its neighbors
+        var offs=[[-1,0],[1,0],[0,-1],[0,1]];
+        for (var n=0;n<4;n++){
+            var nx2=gx+offs[n][0],nz2=gz+offs[n][1];
+            if(nx2<0||nx2>=SIZE||nz2<0||nz2>=SIZE){steep=true;break;}
+            var nh2=hmap[nz2*SIZE+nx2];
+            if(nh2<minNh)minNh=nh2;
+            if(Math.abs(h-nh2)>12){steep=true;break;}
+        }
+        if (steep) continue;
+        var typeRoll=rand(), type;
+        if(h>690) continue; // above snowline — no trees
+        if(h>=431) type=4; // giant pine near snowline
+        else if(h>=302) type=typeRoll<0.5?0:typeRoll<0.7?4:2;
+        else if(h>=151) type=typeRoll<0.35?0:typeRoll<0.60?1:typeRoll<0.75?3:typeRoll<0.90?4:2;
+        else           type=typeRoll<0.30?0:typeRoll<0.55?1:typeRoll<0.75?3:typeRoll<0.88?4:2;
+        // Base the tree at the LOWEST nearby ground, not the sample point —
+        // on a mountain edge that sinks the trunk into the hillside so the
+        // bottom fuses with the terrain instead of floating over the drop.
+        trees.push({x:wx,y:minNh,z:wz,type:type,scale:0.7+rand()*0.7,rotY:rand()*Math.PI*2});
+    }
+    return trees;
+}
+
+// ─────────────────────────────────────────────
+//  generateRocks — scattered boulders, extra-concentrated in the open
+//  field around the plant so that area reads as decorated ground instead
+//  of bare grass, on top of the sparse trees already placed there.
+// ─────────────────────────────────────────────
+function generateRocks(hmap, seed) {
+    var SIZE=GRID_SIZE, WORLD=WORLD_SIZE, G2W=WORLD/(SIZE-1);
+    var rand = seededRand(seed ^ 0x2b3c4d5e);
+    var rocks = [], attempts = 0;
+    var PLANT_CLEAR_RADIUS = 115;
+    var FIELD_RADIUS = 640;
+    function hAtWorld(wx, wz) {
+        var gx = Math.round(wx/G2W), gz = Math.round(wz/G2W);
+        if (gx<0||gx>=SIZE||gz<0||gz>=SIZE) return -1;
+        return hmap[gz*SIZE+gx];
+    }
+    // Fuse mechanism (same as trees): a rock sits at the LOWEST ground
+    // among its cell and 4 neighbors, so on slopes and mountain edges its
+    // base sinks into the hillside instead of floating over the drop.
+    function minHAtWorld(wx, wz) {
+        var gx = Math.round(wx/G2W), gz = Math.round(wz/G2W);
+        if (gx<1||gx>=SIZE-1||gz<1||gz>=SIZE-1) return hAtWorld(wx, wz);
+        var m = hmap[gz*SIZE+gx];
+        if (hmap[gz*SIZE+gx-1]     < m) m = hmap[gz*SIZE+gx-1];
+        if (hmap[gz*SIZE+gx+1]     < m) m = hmap[gz*SIZE+gx+1];
+        if (hmap[(gz-1)*SIZE+gx]   < m) m = hmap[(gz-1)*SIZE+gx];
+        if (hmap[(gz+1)*SIZE+gx]   < m) m = hmap[(gz+1)*SIZE+gx];
+        return m;
+    }
+    while (rocks.length < 3600 && attempts < 26000) {
+        attempts++;
+        var gx=Math.floor(rand()*SIZE), gz=Math.floor(rand()*SIZE);
+        var wx=gx*G2W, wz=gz*G2W;
+        var dxW=wx-WORLD_CENTER, dzW=wz-WORLD_CENTER;
+        var distFromPlant = Math.sqrt(dxW*dxW+dzW*dzW);
+        if (distFromPlant < PLANT_CLEAR_RADIUS) continue;
+
+        var idx=gz*SIZE+gx, h=hmap[idx];
+        if (h < 2) continue;
+
+        var keepChance;
+        if (h > 300)                       keepChance = 0.55; // mountains are the stone-rich zone
+        else if (distFromPlant < FIELD_RADIUS) keepChance = 0.35; // extra rocks decorating the main field
+        else                               keepChance = 0.10; // light sprinkling everywhere else
+        if (rand() > keepChance) continue;
+
+        // variant picks one of several vertex-perturbed geometries so
+        // boulders aren't all the same shape
+        var parent = {x:wx, y:minHAtWorld(wx,wz), z:wz, scale:0.5+rand()*1.6, rotY:rand()*Math.PI*2,
+                      tilt:(rand()-0.5)*0.3, variant:Math.floor(rand()*6)};
+        rocks.push(parent);
+
+        // Rocks cluster: each rock has a chance of another rock beside it
+        // (rolled again per extra rock, capped), and children are normally
+        // smaller than the rock they formed next to. Clustering is much
+        // stronger on mountains — high-altitude rockfall piles up — and
+        // the chance scales smoothly with the current rock's elevation.
+        var prev = parent, extras = 0;
+        while (true) {
+            var elevT = Math.max(0, Math.min(1, (prev.y - 150) / 350)); // 0 in lowland, 1 well up the flanks
+            var clusterChance = 0.64 + elevT * 0.24;                    // 64% ground → 88% high on mountains
+            if (rand() >= clusterChance || extras >= 5 || rocks.length >= 3600) break;
+            var cAng = rand()*Math.PI*2;
+            var cDist = prev.scale*1.3 + rand()*2.5;
+            var cx2 = prev.x + Math.cos(cAng)*cDist;
+            var cz2 = prev.z + Math.sin(cAng)*cDist;
+            var ch2 = hAtWorld(cx2, cz2);
+            if (ch2 < 2) break;
+            var childScale = prev.scale * (0.45 + rand()*0.4); // usually smaller
+            if (childScale < 0.18) break;
+            var child = {x:cx2, y:minHAtWorld(cx2,cz2), z:cz2, scale:childScale, rotY:rand()*Math.PI*2,
+                         tilt:(rand()-0.5)*0.3, variant:Math.floor(rand()*6)};
+            rocks.push(child);
+            prev = child;
+            extras++;
+        }
+    }
+    return rocks;
+}
+
+// ─────────────────────────────────────────────
+//  makeRockGeometries — N unique boulder shapes made by randomly
+//  displacing the vertices of an icosahedron, so no two variants
+//  share a silhouette (instead of every rock being the same die shape).
+// ─────────────────────────────────────────────
+function makeRockGeometries(seed, count) {
+    var geos = [];
+    for (var v = 0; v < count; v++) {
+        var rand = seededRand((seed>>>0) ^ (0x7f31a2 + v*977));
+        var geo = new THREE.IcosahedronGeometry(1, 1);
+        var pos = geo.attributes.position;
+        var variantPhase = rand()*100; // one fixed offset per variant
+        // Displace vertices with a position-based hash so vertices at the
+        // same location move identically and the surface stays welded.
+        for (var i = 0; i < pos.count; i++) {
+            var x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+            var hx = Math.sin(x*12.9898 + y*78.233 + z*37.719 + variantPhase) * 43758.5453;
+            hx = hx - Math.floor(hx);
+            var scaleFactor = 0.72 + hx*0.55;
+            pos.setXYZ(i, x*scaleFactor, y*scaleFactor*0.85, z*scaleFactor);
+        }
+        geo.computeVertexNormals();
+        geos.push(geo);
+    }
+    return geos;
+}
+
+// ─────────────────────────────────────────────
+//  generateTinyRocks — small pickable stones lying on the ground.
+//  Walk up and press E to collect one into the inventory.
+// ─────────────────────────────────────────────
+function generateTinyRocks(hmap, seed) {
+    var SIZE=GRID_SIZE, WORLD=WORLD_SIZE, G2W=WORLD/(SIZE-1);
+    var rand = seededRand(seed ^ 0x11c0ffee);
+    var stones = [], attempts = 0;
+    while (stones.length < 2800 && attempts < 18000) {
+        attempts++;
+        var gx=Math.floor(rand()*SIZE), gz=Math.floor(rand()*SIZE);
+        var wx=gx*G2W, wz=gz*G2W;
+        var dxW=wx-WORLD_CENTER, dzW=wz-WORLD_CENTER;
+        if (Math.sqrt(dxW*dxW+dzW*dzW) < 115) continue;
+        var h = hmap[gz*SIZE+gx];
+        if (h < 2 || h > 690) continue;
+        stones.push({x:wx, y:h, z:wz, scale:0.12+rand()*0.14, rotY:rand()*Math.PI*2, taken:false});
+    }
+    return stones;
+}
+
+// ─────────────────────────────────────────────
+//  generateDeadLeaves — patches of fallen leaves under the forest canopy.
+// ─────────────────────────────────────────────
+function generateDeadLeaves(treeDefs, seed) {
+    var rand = seededRand(seed ^ 0x5eaf1e5);
+    var leaves = [];
+    for (var t = 0; t < treeDefs.length; t++) {
+        var td = treeDefs[t];
+        if (td.type === 2) continue;       // dead trees have long since dropped theirs
+        if (rand() > 0.45) continue;       // only some trees have visible litter
+        var n = 2 + Math.floor(rand()*5);  // 2-6 leaves per litter patch
+        for (var k = 0; k < n; k++) {
+            var ang = rand()*Math.PI*2, dist = 0.5 + rand()*3.5*td.scale;
+            leaves.push({
+                x: td.x + Math.cos(ang)*dist,
+                y: td.y,
+                z: td.z + Math.sin(ang)*dist,
+                rotY: rand()*Math.PI*2,
+                scale: 0.5 + rand()*0.6,
+                tint: rand() // 0..1 → orange-brown range
+            });
+        }
+    }
+    return leaves;
+}
+
+// ─────────────────────────────────────────────
+//  makeLeafTexture — canvas-drawn leaf silhouette (pointed oval with a
+//  stem and center vein) so ground litter reads as real leaves instead
+//  of plain colored squares.
+// ─────────────────────────────────────────────
+function makeLeafTexture() {
+    var size = 64;
+    var cnv = document.createElement('canvas');
+    cnv.width = cnv.height = size;
+    var c = cnv.getContext('2d');
+    c.translate(size/2, size/2);
+    // Leaf body — two mirrored quadratic curves meeting at the tip
+    c.beginPath();
+    c.moveTo(0, -26);
+    c.quadraticCurveTo(16, -8, 0, 22);
+    c.quadraticCurveTo(-16, -8, 0, -26);
+    c.fillStyle = '#a86a28';
+    c.fill();
+    // Center vein + stem
+    c.strokeStyle = '#7a4a18';
+    c.lineWidth = 1.5;
+    c.beginPath(); c.moveTo(0, -24); c.lineTo(0, 22); c.stroke();
+    c.beginPath(); c.moveTo(0, 22); c.lineTo(0, 29); c.stroke();
+    // Side veins
+    c.lineWidth = 0.8;
+    for (var vy = -18; vy < 16; vy += 7) {
+        c.beginPath(); c.moveTo(0, vy); c.lineTo(8, vy+5); c.stroke();
+        c.beginPath(); c.moveTo(0, vy); c.lineTo(-8, vy+5); c.stroke();
+    }
+    var tex = new THREE.CanvasTexture(cnv);
+    return tex;
+}
+
+function generateRivers(hmap, seed) {
+    var SIZE=GRID_SIZE, G2W=QUAD_SCALE, CENTER=GRID_CENTER;
+    var rand=seededRand(seed^0xabcdef12), rivers=[];
+    function hmapAt(gx,gz){
+        if(gx<0||gx>=SIZE||gz<0||gz>=SIZE)return -1;
+        return hmap[gz*SIZE+gx];
+    }
+    var dirs=[[-1,-1],[0,-1],[1,-1],[-1,0],[1,0],[-1,1],[0,1],[1,1]];
+    for(var r=0;r<5;r++){
+        var sx=-1,sz=-1;
+        for(var att=0;att<200;att++){
+            var tx=Math.floor(rand()*SIZE),tz=Math.floor(rand()*SIZE);
+            var dx=tx-CENTER,dz=tz-CENTER;
+            if(Math.sqrt(dx*dx+dz*dz)<250)continue;
+            if(hmapAt(tx,tz)>20){sx=tx;sz=tz;break;}
+        }
+        if(sx<0)continue;
+        var path=[],cx=sx,cz2=sz;
+        for(var step=0;step<300;step++){
+            var ch=hmapAt(cx,cz2);
+            if(ch<3||cx<=1||cx>=SIZE-2||cz2<=1||cz2>=SIZE-2)break;
+            path.push({gx:cx,gz:cz2,h:ch});
+            var bestH=ch,bestX=cx,bestZ=cz2,moved=false;
+            for(var d=0;d<8;d++){
+                var nx2=cx+dirs[d][0]*2,nz2=cz2+dirs[d][1]*2;
+                var nh=hmapAt(nx2,nz2);
+                if(nh>=0&&nh<bestH){bestH=nh;bestX=nx2;bestZ=nz2;moved=true;}
+            }
+            if(!moved)break;
+            cx=bestX; cz2=bestZ;
+        }
+        if(path.length<15)continue;
+        for(var sp=0;sp<3;sp++){
+            var smoothed=[];
+            for(var i=0;i<path.length;i++){
+                var sumX=0,sumZ=0,sumH=0,cnt=0;
+                for(var k=-2;k<=2;k++){var idx2=i+k;if(idx2>=0&&idx2<path.length){sumX+=path[idx2].gx;sumZ+=path[idx2].gz;sumH+=path[idx2].h;cnt++;}}
+                smoothed.push({gx:sumX/cnt,gz:sumZ/cnt,h:sumH/cnt});
+            }
+            path=smoothed;
+        }
+        rivers.push(path.map(function(p){return{x:p.gx*G2W,y:p.h,z:p.gz*G2W};}));
+    }
+    return rivers;
+}
+
+function buildRiverMesh(path) {
+    if(path.length<2)return null;
+    var HW=4, positions=[],indices=[],uvs=[];
+    for(var i=0;i<path.length;i++){
+        var pt=path[i];
+        var fwdX,fwdZ;
+        if(i===0){fwdX=path[1].x-path[0].x;fwdZ=path[1].z-path[0].z;}
+        else if(i===path.length-1){fwdX=path[i].x-path[i-1].x;fwdZ=path[i].z-path[i-1].z;}
+        else{fwdX=path[i+1].x-path[i-1].x;fwdZ=path[i+1].z-path[i-1].z;}
+        var len=Math.sqrt(fwdX*fwdX+fwdZ*fwdZ);
+        if(len<0.0001){fwdX=1;fwdZ=0;}else{fwdX/=len;fwdZ/=len;}
+        var perpX=fwdZ,perpZ=-fwdX;
+        var y=pt.y+0.2;
+        // Rivers taper: a narrow spring at the source, full width through
+        // the middle, then shrinking narrower and narrower over the last
+        // 35% of the run until the ribbon closes to a point and stops —
+        // no more blunt cut-off ends.
+        var t=i/(path.length-1);
+        var taper;
+        if (t < 0.12)      taper = 0.35 + (t/0.12)*0.65;      // spring widening in
+        else if (t > 0.65) taper = 1 - (t-0.65)/0.35;          // long fade-out to nothing
+        else               taper = 1;
+        var w = HW * Math.max(0, taper);
+        positions.push(pt.x-perpX*w,y,pt.z-perpZ*w);
+        positions.push(pt.x+perpX*w,y,pt.z+perpZ*w);
+        var u=t;
+        uvs.push(0,u,1,u);
+    }
+    for(var i=0;i<path.length-1;i++){
+        var v0=i*2,v1=i*2+1,v2=i*2+2,v3=i*2+3;
+        indices.push(v0,v2,v1,v1,v2,v3);
+    }
+    var geo=new THREE.BufferGeometry();
+    geo.setAttribute('position',new THREE.BufferAttribute(new Float32Array(positions),3));
+    geo.setAttribute('uv',new THREE.BufferAttribute(new Float32Array(uvs),2));
+    geo.setIndex(new THREE.BufferAttribute(new Uint32Array(indices),1));
+    geo.computeVertexNormals();
+    var mat=new THREE.MeshLambertMaterial({color:0x2255cc,transparent:true,opacity:0.75,side:THREE.DoubleSide});
+    var mesh=new THREE.Mesh(geo,mat);
+    mesh.userData.uvOffset=0; mesh.userData.uvSpeed=0.4;
+    return mesh;
+}
+
+// ─────────────────────────────────────────────
+//  generateDirtPaths — trails that approach mountains, cut through the
+//  gaps between them, and wander through open forest. Count scales with
+//  however many mountain massifs the world actually generated, instead
+//  of a fixed number.
+// ─────────────────────────────────────────────
+function generateDirtPaths(hmap, seed) {
+    var SIZE=GRID_SIZE, G2W=QUAD_SCALE, CENTER=GRID_CENTER;
+    var rand = seededRand(seed ^ 0x9a7d1e3f);
+    var massifs = hmap.massifs || [];
+
+    function hmapAt(gx,gz){
+        gx = Math.round(gx); gz = Math.round(gz);
+        if (gx<0||gx>=SIZE||gz<0||gz>=SIZE) return -1;
+        return hmap[gz*SIZE+gx];
+    }
+
+    // Walks a trail from (gx,gz) with an initial heading. If `target` is
+    // given, steers gently toward it (blended with natural meander) and
+    // stops once close; otherwise just wanders until it hits bad terrain.
+    function walkTrail(gx, gz, heading, target, pull, maxSteps) {
+        var stepLen = 3.0;
+        var path = [];
+        for (var step = 0; step < maxSteps; step++) {
+            var h = hmapAt(gx,gz);
+            if (h<0 || h<3 || h>380) break;
+            path.push({gx:gx, gz:gz, h:h});
+
+            if (target) {
+                var ddx=target.gx-gx, ddz=target.gz-gz;
+                if (Math.sqrt(ddx*ddx+ddz*ddz) < 18) break; // arrived
+            }
+
+            var desiredHeading = heading;
+            if (target && pull > 0) {
+                var toTarget = Math.atan2(target.gz-gz, target.gx-gx);
+                var hx = Math.cos(heading)*(1-pull) + Math.cos(toTarget)*pull;
+                var hz = Math.sin(heading)*(1-pull) + Math.sin(toTarget)*pull;
+                desiredHeading = Math.atan2(hz, hx);
+            }
+
+            // Meander like a real trail: try a slightly-turned heading each
+            // step, accepting it only if the slope there is gentle enough
+            // to walk (avoids the path climbing straight up a mountainside —
+            // this is also what naturally routes "between mountains" paths
+            // through the low gap/saddle instead of over either peak).
+            var moved = false;
+            for (var tries=0; tries<6 && !moved; tries++) {
+                var testHeading = desiredHeading + (rand()-0.5)*0.5;
+                var nx = gx + Math.cos(testHeading)*stepLen;
+                var nz = gz + Math.sin(testHeading)*stepLen;
+                var nh = hmapAt(nx,nz);
+                if (nh < 0) continue;
+                if (Math.abs(nh-h) < 10 && nh>3 && nh<380) {
+                    heading = testHeading; gx=nx; gz=nz; moved=true;
+                }
+            }
+            if (!moved) break;
+            heading += (rand()-0.5)*0.35;
+        }
+        return path;
+    }
+
+    function smoothAndConvert(path) {
+        if (path.length < 25) return null;
+        for (var sp=0; sp<3; sp++) {
+            var smoothed = [];
+            for (var i=0;i<path.length;i++){
+                var sumX=0,sumZ=0,sumH=0,cnt=0;
+                for (var k=-2;k<=2;k++){ var idx=i+k; if(idx>=0&&idx<path.length){sumX+=path[idx].gx;sumZ+=path[idx].gz;sumH+=path[idx].h;cnt++;} }
+                smoothed.push({gx:sumX/cnt, gz:sumZ/cnt, h:sumH/cnt});
+            }
+            path = smoothed;
+        }
+        return path.map(function(pt){ return {x:pt.gx*G2W, y:pt.h, z:pt.gz*G2W}; });
+    }
+
+    var paths = [];
+
+    // 1) Approach trails — one per massif, starting out in the forest ring
+    //    around it and heading in toward its base, like a trailhead path.
+    for (var mi = 0; mi < massifs.length; mi++) {
+        var mm = massifs[mi];
+        var startAngle = rand()*Math.PI*2;
+        var startDist = mm.spread * (1.6 + rand()*0.8);
+        var sgx = mm.x + Math.cos(startAngle)*startDist;
+        var sgz = mm.z + Math.sin(startAngle)*startDist;
+        if (sgx<10||sgx>=SIZE-10||sgz<10||sgz>=SIZE-10) continue;
+        var sh = hmapAt(sgx,sgz);
+        if (sh < 3 || sh > 300) continue;
+
+        var headingToMassif = Math.atan2(mm.z-sgz, mm.x-sgx);
+        var target = { gx: mm.x + Math.cos(startAngle+Math.PI)*mm.spread*0.35, gz: mm.z + Math.sin(startAngle+Math.PI)*mm.spread*0.35 };
+        var raw = walkTrail(sgx, sgz, headingToMassif, target, 0.35, 220);
+        var conv = smoothAndConvert(raw);
+        if (conv) paths.push(conv);
+    }
+
+    // 2) Gap trails — cuts between pairs of nearby massifs, naturally
+    //    routing through the low saddle between them (steep-slope avoidance
+    //    in walkTrail keeps it off both peaks).
+    for (var i = 0; i < massifs.length; i++) {
+        for (var j = i+1; j < massifs.length; j++) {
+            var a = massifs[i], b = massifs[j];
+            var ddx=a.x-b.x, ddz=a.z-b.z;
+            var dist = Math.sqrt(ddx*ddx+ddz*ddz);
+            var minGap = (a.spread+b.spread)*1.15, maxGap = (a.spread+b.spread)*2.6;
+            if (dist < minGap || dist > maxGap) continue;
+
+            var perp = Math.atan2(b.z-a.z, b.x-a.x) + Math.PI/2;
+            var offs = (rand()-0.5)*Math.min(a.spread,b.spread)*0.6;
+            var sgx2 = a.x + (b.x-a.x)*0.12 + Math.cos(perp)*offs;
+            var sgz2 = a.z + (b.z-a.z)*0.12 + Math.sin(perp)*offs;
+            var sh2 = hmapAt(sgx2,sgz2);
+            if (sh2 < 3 || sh2 > 340) continue;
+
+            var heading2 = Math.atan2(b.z-sgz2, b.x-sgx2);
+            var target2 = { gx: a.x + (b.x-a.x)*0.88, gz: a.z + (b.z-a.z)*0.88 };
+            var raw2 = walkTrail(sgx2, sgz2, heading2, target2, 0.45, 260);
+            var conv2 = smoothAndConvert(raw2);
+            if (conv2) paths.push(conv2);
+        }
+    }
+
+    // 3) General forest trails — a handful of unbiased meandering paths
+    //    for variety, independent of any massif.
+    var numForestTrails = 3 + Math.floor(rand()*3); // 3-5
+    for (var p = 0; p < numForestTrails; p++) {
+        var startGx=-1, startGz=-1;
+        for (var attempt=0; attempt<200; attempt++) {
+            var tx = rand()*SIZE, tz = rand()*SIZE;
+            var dxC = tx-CENTER, dzC = tz-CENTER;
+            if (Math.sqrt(dxC*dxC+dzC*dzC) < 190) continue; // clear of plant/spawn
+            var h = hmapAt(tx,tz);
+            if (h > 5 && h < 300) { startGx=tx; startGz=tz; break; }
+        }
+        if (startGx < 0) continue;
+        var raw3 = walkTrail(startGx, startGz, rand()*Math.PI*2, null, 0, 180+Math.floor(rand()*140));
+        var conv3 = smoothAndConvert(raw3);
+        if (conv3) paths.push(conv3);
+    }
+
+    return paths;
+}
+
+// ─────────────────────────────────────────────
+//  buildDirtPathMesh — dirt-colored ribbon, no transparency
+// ─────────────────────────────────────────────
+function buildDirtPathMesh(path, seed) {
+    if (path.length < 2) return null;
+    var HALF_WIDTH = 2.2;
+    var rand = seededRand((seed>>>0) ^ 0x51ed7a3);
+    var positions=[], colors=[], indices=[], uvs=[];
+
+    for (var i=0;i<path.length;i++){
+        var pt=path[i];
+        var fwdX,fwdZ;
+        if(i===0){fwdX=path[1].x-path[0].x;fwdZ=path[1].z-path[0].z;}
+        else if(i===path.length-1){fwdX=path[i].x-path[i-1].x;fwdZ=path[i].z-path[i-1].z;}
+        else{fwdX=path[i+1].x-path[i-1].x;fwdZ=path[i+1].z-path[i-1].z;}
+        var len=Math.sqrt(fwdX*fwdX+fwdZ*fwdZ);
+        if(len<0.0001){fwdX=1;fwdZ=0;}else{fwdX/=len;fwdZ/=len;}
+        var perpX=fwdZ, perpZ=-fwdX;
+        var w = HALF_WIDTH * (0.8 + rand()*0.4); // slightly uneven width, more natural
+        var y = pt.y + 0.15;
+        positions.push(pt.x-perpX*w, y, pt.z-perpZ*w);
+        positions.push(pt.x+perpX*w, y, pt.z+perpZ*w);
+
+        // Dirt color variation — tan-to-brown mix, like a sun-bleached trail
+        for (var side=0; side<2; side++) {
+            var cn = rand();
+            colors.push(0.45+cn*0.20, 0.34+cn*0.14, 0.20+cn*0.08);
+        }
+        var u = i/(path.length-1);
+        uvs.push(0,u, 1,u);
+    }
+    for (var i=0;i<path.length-1;i++){
+        var v0=i*2,v1=i*2+1,v2=i*2+2,v3=i*2+3;
+        indices.push(v0,v2,v1, v1,v2,v3);
+    }
+    var geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions),3));
+    geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(colors),3));
+    geo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(uvs),2));
+    geo.setIndex(new THREE.BufferAttribute(new Uint32Array(indices),1));
+    geo.computeVertexNormals();
+    return new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors:true }));
+}
+
+// ═══════════════════════════════════════════════════════════════
+// GAME MODE — chosen on the title screen. PEACEFUL disables every
+// health-loss mechanic (predators, radiation bubble, freezing);
+// SURVIVAL keeps them all active.
+// ═══════════════════════════════════════════════════════════════
+var GameMode = null; // 'PEACEFUL' | 'SURVIVAL', set when the player picks on title screen
+
+// ═══════════════════════════════════════════════════════════════
+// INVENTORY — gathered resources, drawn into the hotbar by the HUD.
+// Punch trees for logs, mine boulders for stone, press E to pick up
+// tiny rocks, press C with 4 logs + 1 stone (or tiny rock) → knife.
+// ═══════════════════════════════════════════════════════════════
+var Inventory = { log:0, stone:0, tinyRock:0, knife:0 };
+
+// ═══════════════════════════════════════════════════════════════
+// INVENTORY UI — full-screen overlay (TAB to toggle) with an 8-slot
+// item row and a 3x3 crafting grid. Click an item to select it, click
+// a craft cell to place one unit, click a placed unit to take it back.
+// A valid recipe lights up the output slot; click it to craft.
+// ═══════════════════════════════════════════════════════════════
+var InventoryUI = {
+    open: false,
+    selected: null,            // item key currently selected for placing
+    craftGrid: [null,null,null,null,null,null,null,null,null],
+    ITEMS: {
+        log:      { label:'Log' },
+        stone:    { label:'Stone' },
+        tinyRock: { label:'Tiny Rock' },
+        knife:    { label:'Knife' }
+    },
+
+    init() {
+        var self = this;
+        var invGrid = document.getElementById('inv-grid');
+        for (var i = 0; i < 25; i++) { // 5x5 = 25 total slots
+            var slot = document.createElement('div');
+            slot.className = 'inv-slot';
+            slot.dataset.slot = i;
+            invGrid.appendChild(slot);
+        }
+        invGrid.addEventListener('click', function(e){
+            var slot = e.target.closest('.inv-slot');
+            if (!slot || !slot.dataset.item) return;
+            self.selected = (self.selected === slot.dataset.item) ? null : slot.dataset.item;
+            self.render();
+        });
+
+        var craftGridEl = document.getElementById('craft-grid');
+        for (var c = 0; c < 9; c++) {
+            var cell = document.createElement('div');
+            cell.className = 'craft-cell';
+            cell.dataset.cell = c;
+            craftGridEl.appendChild(cell);
+        }
+        craftGridEl.addEventListener('click', function(e){
+            var cell = e.target.closest('.craft-cell');
+            if (!cell) return;
+            var idx = +cell.dataset.cell;
+            if (self.craftGrid[idx]) {
+                // take the placed item back
+                Inventory[self.craftGrid[idx]]++;
+                self.craftGrid[idx] = null;
+            } else if (self.selected && Inventory[self.selected] > 0) {
+                Inventory[self.selected]--;
+                self.craftGrid[idx] = self.selected;
+                if (Inventory[self.selected] <= 0) self.selected = null;
+            }
+            self.render();
+        });
+
+        document.getElementById('craft-out').addEventListener('click', function(){
+            if (!self.recipeResult()) return;
+            // consume everything in the grid (already deducted from Inventory)
+            for (var i = 0; i < 9; i++) self.craftGrid[i] = null;
+            Inventory.knife++;
+            HUD.toast('Crafted a knife!', 3);
+            self.render();
+        });
+    },
+
+    recipeResult() {
+        // Shapeless: exactly 4 logs + exactly 1 stone OR 1 tiny rock
+        var counts = { log:0, stone:0, tinyRock:0, knife:0 }, total = 0;
+        for (var i = 0; i < 9; i++) {
+            if (this.craftGrid[i]) { counts[this.craftGrid[i]]++; total++; }
+        }
+        if (total === 5 && counts.log === 4 && (counts.stone + counts.tinyRock) === 1) return 'knife';
+        return null;
+    },
+
+    render() {
+        var self = this;
+        var itemKeys = Object.keys(this.ITEMS);
+        var slots = document.querySelectorAll('#inv-grid .inv-slot');
+        slots.forEach(function(slot, i){
+            var key = itemKeys[i];
+            slot.innerHTML = '';
+            delete slot.dataset.item;
+            slot.classList.remove('selected');
+            if (key && Inventory[key] > 0) {
+                slot.dataset.item = key;
+                if (self.selected === key) slot.classList.add('selected');
+                slot.innerHTML =
+                    '<div class="item-label">' + self.ITEMS[key].label + '</div>' +
+                    '<div class="item-icon ' + key + '"></div>' +
+                    '<div class="item-count">' + Inventory[key] + '</div>';
+            }
+        });
+
+        var cells = document.querySelectorAll('#craft-grid .craft-cell');
+        cells.forEach(function(cell, i){
+            var key = self.craftGrid[i];
+            cell.innerHTML = key ? '<div class="item-icon ' + key + '"></div>' : '';
+        });
+
+        var out = document.getElementById('craft-out');
+        var result = this.recipeResult();
+        out.classList.toggle('ready', !!result);
+        out.innerHTML = result ? '<div class="item-icon ' + result + '"></div>' : '';
+    },
+
+    toggle() {
+        this.open = !this.open;
+        if (this.open) {
+            document.exitPointerLock && document.exitPointerLock();
+            this.render();
+            document.getElementById('inv-screen').style.display = 'flex';
+        } else {
+            // return anything still sitting in the craft grid
+            for (var i = 0; i < 9; i++) {
+                if (this.craftGrid[i]) { Inventory[this.craftGrid[i]]++; this.craftGrid[i] = null; }
+            }
+            this.selected = null;
+            document.getElementById('inv-screen').style.display = 'none';
+        }
+    }
+};
+
+// ═══════════════════════════════════════════════════════════════
+// PLAYER
+// ═══════════════════════════════════════════════════════════════
+var Player = {
+    pos: new THREE.Vector3(WORLD_CENTER,30,WORLD_CENTER),
+    vel: new THREE.Vector3(0,0,0),
+    health:100, maxHealth:100,
+    stamina:100, maxStamina:100,
+    hunger:100,
+    radiation:0,          // 0-100 HUD display: progress toward the radiation-bubble damage threshold
+    inRadiationTimer:0,   // seconds continuously inside the plant's radiation bubble
+    peakTimer:0,
+    freezing:false,
+    alive:true,
+    onGround:false,
+    snowLine:682,
+
+    reset() {
+        this.pos.set(WORLD_CENTER,30,WORLD_CENTER);
+        this.vel.set(0,0,0);
+        this.health=100; this.stamina=100; this.hunger=100;
+        this.radiation=0; this.inRadiationTimer=0; this.peakTimer=0; this.freezing=false;
+        this.alive=true; this.onGround=false;
+    },
+
+    update(dt, camera, keys, getHeightAt) {
+        if(!this.alive)return;
+        var forward=new THREE.Vector3();
+        camera.getWorldDirection(forward); forward.y=0; forward.normalize();
+        var right=new THREE.Vector3();
+        right.crossVectors(forward,new THREE.Vector3(0,1,0)).normalize();
+        var sprint=keys['ShiftLeft']||keys['ShiftRight'];
+        var speed=sprint?22.0:12.0;
+        var moveDir=new THREE.Vector3(0,0,0);
+        if(keys['KeyW']||keys['ArrowUp'])    moveDir.addScaledVector(forward,1);
+        if(keys['KeyS']||keys['ArrowDown'])  moveDir.addScaledVector(forward,-1);
+        if(keys['KeyD']||keys['ArrowRight']) moveDir.addScaledVector(right,1);
+        if(keys['KeyA']||keys['ArrowLeft'])  moveDir.addScaledVector(right,-1);
+        if(moveDir.lengthSq()>0){
+            moveDir.normalize();
+            this.pos.x+=moveDir.x*speed*dt;
+            this.pos.z+=moveDir.z*speed*dt;
+        }
+        if(keys['Space']&&this.onGround){this.vel.y=9.0;this.onGround=false;}
+        this.vel.y-=22*dt;
+        this.pos.y+=this.vel.y*dt;
+        var groundH=getHeightAt(this.pos.x,this.pos.z);
+        if(this.pos.y<groundH+1.75){
+            this.pos.y=groundH+1.75; this.vel.y=0; this.onGround=true;
+        } else { this.onGround=false; }
+        this.pos.x=Math.max(4,Math.min(WORLD_SIZE-4,this.pos.x));
+        this.pos.z=Math.max(4,Math.min(WORLD_SIZE-4,this.pos.z));
+        this.hunger=Math.max(0,this.hunger-0.5*dt);
+        if(GameMode==='SURVIVAL'){
+            if(this.hunger<=0) this.takeDamage(1*dt);
+            var altitude=this.pos.y-1.75;
+            if(altitude>=this.snowLine){this.peakTimer+=dt;}
+            else{this.peakTimer=Math.max(0,this.peakTimer-dt*3);}
+            if(this.peakTimer>=360){this.freezing=true;this.takeDamage(5*dt);}
+            else{this.freezing=false;}
+        } else {
+            this.freezing=false; this.peakTimer=0;
+        }
+        camera.position.copy(this.pos);
+    },
+
+    takeDamage(dmg) {
+        if(!this.alive)return;
+        this.health-=dmg;
+        if(this.health<=0){this.health=0;this.alive=false;}
+    }
+};
+
+// ═══════════════════════════════════════════════════════════════
+// MOUSE LOOK
+// ═══════════════════════════════════════════════════════════════
+var MouseLook = {
+    yaw:0, pitch:0, locked:false,
+    init(canvas) {
+        canvas.addEventListener('click',()=>canvas.requestPointerLock());
+        document.addEventListener('pointerlockchange',()=>{
+            this.locked=document.pointerLockElement===canvas;
+        });
+        document.addEventListener('mousemove',(e)=>{
+            if(!this.locked)return;
+            this.yaw  -=e.movementX*0.002;
+            this.pitch -=e.movementY*0.002;
+            this.pitch =Math.max(-1.4,Math.min(1.4,this.pitch));
+        });
+    },
+    update(camera) {
+        var cp=Math.cos(this.pitch);
+        var fx=-Math.sin(this.yaw)*cp, fy=Math.sin(this.pitch), fz=-Math.cos(this.yaw)*cp;
+        camera.lookAt(camera.position.x+fx,camera.position.y+fy,camera.position.z+fz);
+    }
+};
+
+// ═══════════════════════════════════════════════════════════════
+// ANIMALS
+// ═══════════════════════════════════════════════════════════════
+var AT={FOX:0,RABBIT:1,SNOW_LEOPARD:2,DEER:3,FROG:4,SQUIRREL:5,BEAR:6};
+var AS={IDLE:0,WANDER:1,FLEE:2,STALK:3,CHASE:4,ATTACK:5,DEAD:6};
+var ADEFS={
+    0:{hp:30, spd:6, fleeSpd:10,det:25,atkR:2, dmg:5, atkCD:1.2,color:0xcc6611,size:[0.9,0.5,1.6]},
+    1:{hp:10, spd:4, fleeSpd:14,det:20,atkR:0, dmg:0, atkCD:99, color:0xddccaa,size:[0.5,0.4,0.8]},
+    2:{hp:80, spd:5, fleeSpd:5, det:40,atkR:3, dmg:25,atkCD:2.0,color:0xccbbaa,size:[1.2,0.6,2.2]},
+    3:{hp:50, spd:5, fleeSpd:12,det:30,atkR:0, dmg:0, atkCD:99, color:0xaa8844,size:[0.9,1.1,1.8]},
+    4:{hp:8,  spd:0, fleeSpd:5, det:10,atkR:0, dmg:0, atkCD:99, color:0x33aa22,size:[0.4,0.2,0.55]},
+    5:{hp:8,  spd:3, fleeSpd:9, det:15,atkR:0, dmg:0, atkCD:99, color:0x886633,size:[0.3,0.35,0.55]},
+    6:{hp:150,spd:4, fleeSpd:4, det:20,atkR:4, dmg:30,atkCD:2.5,color:0x443311,size:[1.8,1.4,2.8]}
+};
+function dist2D(a,b){var dx=a.x-b.x,dz=a.z-b.z;return Math.sqrt(dx*dx+dz*dz);}
+function randWander(pos){
+    var ang=Math.random()*Math.PI*2,d=10+Math.random()*20;
+    return {x:Math.max(4,Math.min(WORLD_SIZE-4,pos.x+Math.cos(ang)*d)),z:Math.max(4,Math.min(WORLD_SIZE-4,pos.z+Math.sin(ang)*d))};
+}
+function moveToward(an,tx,tz,spd,dt,getH){
+    var dx=tx-an.pos.x,dz=tz-an.pos.z,dist=Math.sqrt(dx*dx+dz*dz);
+    if(dist<0.05)return dist;
+    var nx=dx/dist,nz=dz/dist;
+    an.pos.x=Math.max(4,Math.min(WORLD_SIZE-4,an.pos.x+nx*spd*dt));
+    an.pos.z=Math.max(4,Math.min(WORLD_SIZE-4,an.pos.z+nz*spd*dt));
+    an.pos.y=getH(an.pos.x,an.pos.z)+an.hh;
+    an.mesh.position.copy(an.pos);
+    if(dist>0.1)an.mesh.rotation.y=Math.atan2(nx,nz);
+    return dist;
+}
+function fleeFrom(an,fx,fz,spd,dt,getH){
+    var dx=an.pos.x-fx,dz=an.pos.z-fz,d=Math.sqrt(dx*dx+dz*dz);
+    if(d<0.01){dx=1;dz=0;d=1;}
+    moveToward(an,an.pos.x+(dx/d)*5,an.pos.z+(dz/d)*5,spd,dt,getH);
+}
+function createAnimal(type,x,z,getH){
+    var def=ADEFS[type],s=def.size;
+    var mesh=new THREE.Mesh(new THREE.BoxGeometry(s[0],s[1],s[2]),new THREE.MeshLambertMaterial({color:def.color}));
+    var gh=getH(x,z);
+    mesh.position.set(x,gh+s[1]*0.5,z);
+    return {type,pos:new THREE.Vector3(x,gh+s[1]*0.5,z),state:AS.IDLE,health:def.hp,
+            spd:def.spd,fleeSpd:def.fleeSpd,det:def.det,atkR:def.atkR,dmg:def.dmg,atkCD:def.atkCD,
+            atkTimer:0,stTimer:0,wanderT:null,mesh,active:true,pd:0,deadT:0,hopT:0,hh:s[1]*0.5};
+}
+function idleWander(an,dt,getH){
+    if(an.state===AS.IDLE){an.stTimer+=dt;if(an.stTimer>=2){an.wanderT=randWander(an.pos);an.state=AS.WANDER;an.stTimer=0;}}
+    else if(an.state===AS.WANDER){if(moveToward(an,an.wanderT.x,an.wanderT.z,an.spd,dt,getH)<3){an.state=AS.IDLE;an.stTimer=0;}}
+    else{an.state=AS.IDLE;an.stTimer=0;}
+}
+function updateAnimal(an,dt,pp,all,getH){
+    if(!an.active)return;
+    if(an.state===AS.DEAD){an.deadT+=dt;if(an.deadT>=5)an.active=false;return;}
+    if(an.health<=0){an.state=AS.DEAD;an.mesh.material.color.setHex(0x333333);return;}
+    var dp=dist2D(an.pos,pp); an.stTimer+=dt;
+    switch(an.type){
+        case AT.SNOW_LEOPARD:
+            if(dp<=an.atkR){an.state=AS.ATTACK;}
+            else if(dp<15){an.state=AS.CHASE;}
+            else if(dp<an.det){an.state=AS.STALK;}
+            else if(an.state===AS.STALK||an.state===AS.CHASE||an.state===AS.ATTACK){an.state=AS.IDLE;an.stTimer=0;}
+            if(an.state===AS.STALK)moveToward(an,pp.x,pp.z,an.spd*0.35,dt,getH);
+            else if(an.state===AS.CHASE)moveToward(an,pp.x,pp.z,an.spd,dt,getH);
+            else if(an.state===AS.ATTACK){an.atkTimer+=dt;if(an.atkTimer>=an.atkCD){if(dp<=an.atkR)an.pd+=an.dmg;an.atkTimer=0;}}
+            else idleWander(an,dt,getH);
+            break;
+        case AT.BEAR:
+            if(dp<=an.atkR){an.state=AS.ATTACK;}
+            else if(dp<12){an.state=AS.CHASE;}
+            else if(an.state===AS.CHASE||an.state===AS.ATTACK){an.state=AS.IDLE;an.stTimer=0;}
+            if(an.state===AS.CHASE)moveToward(an,pp.x,pp.z,an.spd,dt,getH);
+            else if(an.state===AS.ATTACK){an.atkTimer+=dt;if(an.atkTimer>=an.atkCD){if(dp<=an.atkR)an.pd+=an.dmg;an.atkTimer=0;}}
+            else idleWander(an,dt,getH);
+            break;
+        case AT.FOX:
+            if(dp<8){fleeFrom(an,pp.x,pp.z,an.fleeSpd,dt,getH);an.state=AS.FLEE;break;}
+            var nr=null,nd=Infinity;
+            for(var i=0;i<all.length;i++){var a=all[i];if(!a.active||a.type!==AT.RABBIT||a.health<=0)continue;var d=dist2D(an.pos,a.pos);if(d<an.det&&d<nd){nd=d;nr=a;}}
+            if(nr){
+                if(nd<=an.atkR){an.state=AS.ATTACK;an.atkTimer+=dt;if(an.atkTimer>=an.atkCD){nr.health-=an.dmg;if(nr.health<=0)nr.state=AS.DEAD;an.atkTimer=0;}}
+                else{an.state=AS.CHASE;moveToward(an,nr.pos.x,nr.pos.z,an.spd,dt,getH);}
+            } else {
+                if(an.state===AS.CHASE||an.state===AS.ATTACK||an.state===AS.FLEE){an.state=AS.IDLE;an.stTimer=0;}
+                idleWander(an,dt,getH);
+            }
+            break;
+        case AT.RABBIT:{
+            var thr=null,thrD=Infinity;
+            for(var i=0;i<all.length;i++){var a=all[i];if(!a.active||a.health<=0)continue;if(a.type!==AT.FOX&&a.type!==AT.BEAR)continue;var d=dist2D(an.pos,a.pos);if(d<20&&d<thrD){thrD=d;thr=a;}}
+            if(!thr&&dp<20)thr={pos:pp};
+            if(thr){an.state=AS.FLEE;fleeFrom(an,thr.pos.x,thr.pos.z,an.fleeSpd,dt,getH);}
+            else{if(an.state===AS.FLEE){an.state=AS.IDLE;an.stTimer=0;}idleWander(an,dt,getH);}
+            break;}
+        case AT.DEER:{
+            var thr=null,thrD=Infinity;
+            for(var i=0;i<all.length;i++){var a=all[i];if(!a.active||a.health<=0)continue;if(a.type!==AT.BEAR&&a.type!==AT.SNOW_LEOPARD)continue;var d=dist2D(an.pos,a.pos);if(d<25&&d<thrD){thrD=d;thr=a;}}
+            if(!thr&&dp<25)thr={pos:pp};
+            if(thr){an.state=AS.FLEE;fleeFrom(an,thr.pos.x,thr.pos.z,an.fleeSpd,dt,getH);}
+            else{if(an.state===AS.FLEE){an.state=AS.IDLE;an.stTimer=0;}idleWander(an,dt,getH);}
+            break;}
+        case AT.SQUIRREL:
+            if(dp<12){an.state=AS.FLEE;an.hopT-=dt;if(an.hopT<=0){an.hopT=0.8;fleeFrom(an,pp.x,pp.z,an.fleeSpd*1.5,0.2,getH);}}
+            else{if(an.state===AS.FLEE){an.state=AS.IDLE;an.stTimer=0;}an.hopT-=dt;if(an.state===AS.WANDER&&an.hopT<=0){an.hopT=0.8;if(moveToward(an,an.wanderT.x,an.wanderT.z,an.spd*1.5,0.15,getH)<3){an.state=AS.IDLE;an.stTimer=0;}}else idleWander(an,dt,getH);}
+            break;
+        case AT.FROG:
+            an.hopT-=dt;if(an.hopT<=0){an.hopT=1.0;var t=randWander(an.pos);moveToward(an,t.x,t.z,an.fleeSpd,0.15,getH);}
+            break;
+        default: idleWander(an,dt,getH); break;
+    }
+    an.mesh.position.copy(an.pos);
+}
+
+var AnimalManager = {
+    animals:[], pendingDmg:0,
+    init(scene, getH, treePositions) {
+        this.animals=[];
+        var cx=WORLD_CENTER,cz=WORLD_CENTER;
+        var self=this;
+        function randPos(){
+            var x,z,t=0;
+            do{x=50+Math.random()*(WORLD_SIZE-100);z=50+Math.random()*(WORLD_SIZE-100);t++;}
+            while(Math.sqrt((x-cx)*(x-cx)+(z-cz)*(z-cz))<150&&t<50);
+            return{x,z};
+        }
+        function spawnN(type,count,filter){
+            var sp=0,t=0;
+            while(sp<count&&t<count*20){t++;var p=randPos();var h=getH(p.x,p.z);if(filter&&!filter(p.x,p.z,h))continue;var a=createAnimal(type,p.x,p.z,getH);scene.add(a.mesh);self.animals.push(a);sp++;}
+        }
+        spawnN(AT.RABBIT,12,null);
+        spawnN(AT.FOX,8,null);
+        spawnN(AT.SNOW_LEOPARD,4,(x,z,h)=>h>518);
+        spawnN(AT.DEER,10,null);
+        spawnN(AT.FROG,15,(x,z,h)=>h<8);
+        // Squirrels near trees
+        if(treePositions&&treePositions.length>0){
+            var sq=0,st=0;
+            while(sq<25&&st<500){st++;var tp=treePositions[Math.floor(Math.random()*treePositions.length)];var sx=tp.x+(Math.random()-0.5)*20,sz=tp.z+(Math.random()-0.5)*20;sx=Math.max(4,Math.min(WORLD_SIZE-4,sx));sz=Math.max(4,Math.min(WORLD_SIZE-4,sz));if(Math.sqrt((sx-cx)*(sx-cx)+(sz-cz)*(sz-cz))<150)continue;var a=createAnimal(AT.SQUIRREL,sx,sz,getH);scene.add(a.mesh);this.animals.push(a);sq++;}
+        } else spawnN(AT.SQUIRREL,25,null);
+        spawnN(AT.BEAR,6,null);
+    },
+    update(dt,pp,getH,scene,cullDist){
+        this.pendingDmg=0;
+        var cullDistSq = cullDist ? cullDist*cullDist : Infinity;
+        for(var i=0;i<this.animals.length;i++){
+            var an=this.animals[i];if(!an.active)continue;
+            // Skip AI simulation entirely for animals far outside cull range —
+            // they're invisible anyway, and nothing that far can interact
+            // with the player (detection/attack ranges are much shorter).
+            var adx=pp.x-an.pos.x, adz=pp.z-an.pos.z;
+            if (adx*adx+adz*adz > cullDistSq) continue;
+            updateAnimal(an,dt,pp,this.animals,getH);
+            if(an.pd>0){this.pendingDmg+=an.pd;an.pd=0;}
+            if(!an.active)scene.remove(an.mesh);
+        }
+    },
+    popDamage(){var d=this.pendingDmg;this.pendingDmg=0;return d;}
+};
+
+// ═══════════════════════════════════════════════════════════════
+// HUD
+// ═══════════════════════════════════════════════════════════════
+var HUD = {
+    canvas:null, ctx:null, _blink:0, _fps:0, _fc:0, _ft:0,
+    _toastText:'', _toastUntil:0,
+    toast(text, seconds){
+        this._toastText = text;
+        this._toastUntil = performance.now()/1000 + (seconds || 2.2);
+    },
+    init(){
+        this.canvas=document.createElement('canvas');
+        this.canvas.style.cssText='position:absolute;top:0;left:0;pointer-events:none;z-index:10;';
+        document.body.appendChild(this.canvas);
+        this.ctx=this.canvas.getContext('2d');
+        this._resize();
+        window.addEventListener('resize',()=>this._resize());
+    },
+    _resize(){ this.canvas.width=window.innerWidth; this.canvas.height=window.innerHeight; },
+    render(player, time, animalCount){
+        var ctx=this.ctx,W=this.canvas.width,H=this.canvas.height;
+        ctx.clearRect(0,0,W,H);
+        this._fc++; this._blink+=0.016;
+        // Refresh 4x per second: frames counted over the window, scaled to per-second
+        var fpsWin = time - this._ft;
+        if (fpsWin >= 0.25) { this._fps = Math.round(this._fc / fpsWin); this._fc = 0; this._ft = time; }
+
+        function bar(label,val,max,color,y){
+            ctx.fillStyle='rgba(0,0,0,0.55)';ctx.fillRect(14,y,180,14);
+            var f=Math.max(0,Math.min(1,val/max));
+            ctx.fillStyle=color;ctx.fillRect(14,y,180*f,14);
+            ctx.strokeStyle='#ffffff44';ctx.lineWidth=1;ctx.strokeRect(14,y,180,14);
+            ctx.fillStyle='#fff';ctx.font='bold 10px monospace';
+            ctx.fillText(label+': '+Math.floor(val),18,y+11);
+        }
+        bar('HP',player.health,player.maxHealth,'#cc2222',14);
+        bar('STA',player.stamina,player.maxStamina,'#2255cc',36);
+        bar('FOOD',player.hunger,100,'#ccaa22',58);
+        bar('RAD',player.radiation,100,'#22cc44',80);
+
+        // FPS
+        ctx.fillStyle='rgba(0,0,0,0.5)';ctx.fillRect(W-82,6,74,22);
+        ctx.fillStyle='#0f0';ctx.font='bold 13px monospace';
+        ctx.fillText('FPS: '+this._fps,W-78,22);
+
+        // Hotbar — first slots show gathered items with counts
+        var ss=50,pd=4,hbW=8*(ss+pd)-pd,hbX=(W-hbW)*0.5,hbY=H-ss-14;
+        var slots = [
+            {label:'LOG',   count:Inventory.log,      color:'#8a5a2a'},
+            {label:'STONE', count:Inventory.stone,    color:'#8d8d8d'},
+            {label:'ROCK',  count:Inventory.tinyRock, color:'#b0aa9e'},
+            {label:'KNIFE', count:Inventory.knife,    color:'#cfd6dd'}
+        ];
+        for(var s=0;s<8;s++){
+            var sx=hbX+s*(ss+pd);
+            ctx.fillStyle='rgba(20,20,20,0.75)';ctx.fillRect(sx,hbY,ss,ss);
+            ctx.strokeStyle='#888';ctx.lineWidth=1.5;ctx.strokeRect(sx,hbY,ss,ss);
+            ctx.fillStyle='#aaa';ctx.font='10px monospace';ctx.fillText((s+1).toString(),sx+3,hbY+13);
+            var slot = slots[s];
+            if (slot && slot.count > 0) {
+                // item icon
+                if (slot.label==='LOG') {
+                    ctx.fillStyle=slot.color; ctx.fillRect(sx+11,hbY+20,28,10);
+                    ctx.fillStyle='#6a421c'; ctx.beginPath(); ctx.arc(sx+11,hbY+25,5,0,Math.PI*2); ctx.fill();
+                } else if (slot.label==='KNIFE') {
+                    ctx.fillStyle=slot.color;
+                    ctx.beginPath(); ctx.moveTo(sx+14,hbY+34); ctx.lineTo(sx+30,hbY+16); ctx.lineTo(sx+34,hbY+22); ctx.lineTo(sx+18,hbY+38); ctx.closePath(); ctx.fill();
+                    ctx.fillStyle='#5a3a1a'; ctx.fillRect(sx+12,hbY+34,8,6);
+                } else {
+                    ctx.fillStyle=slot.color;
+                    ctx.beginPath(); ctx.arc(sx+25,hbY+27,slot.label==='STONE'?10:7,0,Math.PI*2); ctx.fill();
+                }
+                ctx.fillStyle='#fff'; ctx.font='bold 12px monospace'; ctx.textAlign='right';
+                ctx.fillText(slot.count, sx+ss-4, hbY+ss-5); ctx.textAlign='left';
+                ctx.fillStyle='#ccc'; ctx.font='8px monospace';
+                ctx.fillText(slot.label, sx+3, hbY+ss-4);
+            }
+        }
+
+        // Freeze bar
+        if(player.peakTimer>0){
+            ctx.fillStyle='rgba(60,120,255,0.35)';ctx.fillRect(0,0,W*Math.min(1,player.peakTimer/360),6);
+        }
+        if(player.freezing){
+            var al=0.6+0.4*Math.sin(this._blink*4);
+            ctx.fillStyle='rgba(100,180,255,'+al+')';
+            ctx.font='bold 36px monospace';ctx.textAlign='center';
+            ctx.fillText('❄ FREEZING',W*0.5,H*0.4);ctx.textAlign='left';
+        }
+
+        // Crosshair
+        var cx2=W*0.5,cy2=H*0.5,cl=8;
+        ctx.strokeStyle='rgba(255,255,255,0.8)';ctx.lineWidth=1.5;
+        ctx.beginPath();ctx.moveTo(cx2-cl,cy2);ctx.lineTo(cx2+cl,cy2);
+        ctx.moveTo(cx2,cy2-cl);ctx.lineTo(cx2,cy2+cl);ctx.stroke();
+
+        // Toast — pickup/craft feedback above the hotbar
+        if (time < this._toastUntil) {
+            ctx.fillStyle='rgba(0,0,0,0.6)';
+            ctx.font='bold 15px monospace'; ctx.textAlign='center';
+            var tw = ctx.measureText(this._toastText).width + 24;
+            ctx.fillRect(W*0.5-tw*0.5, H-118, tw, 26);
+            ctx.fillStyle='#c9f5c9';
+            ctx.fillText(this._toastText, W*0.5, H-100);
+            ctx.textAlign='left';
+        }
+
+        // Death
+        if(!player.alive){
+            ctx.fillStyle='rgba(140,0,0,0.55)';ctx.fillRect(0,0,W,H);
+            ctx.fillStyle='#ff2222';ctx.font='bold 72px monospace';ctx.textAlign='center';
+            ctx.fillText('YOU DIED',W*0.5,H*0.5);
+            ctx.font='22px monospace';ctx.fillStyle='#ffaaaa';
+            ctx.fillText('Press R to respawn',W*0.5,H*0.5+60);ctx.textAlign='left';
+        }
+
+        // Debug
+        ctx.fillStyle='#666';ctx.font='11px monospace';
+        ctx.fillText('Animals: '+animalCount,14,H-14);
+        ctx.fillText('WASD=move  SPACE=jump  SHIFT=sprint  CLICK=punch/mine  E=pick up  TAB=inventory',14,H-30);
+    },
+    renderTitle(){
+        var ctx=this.ctx,W=this.canvas.width,H=this.canvas.height;
+        ctx.clearRect(0,0,W,H);
+        ctx.fillStyle='rgba(0,10,0,0.95)';ctx.fillRect(0,0,W,H);
+        ctx.fillStyle='#22ff44';ctx.font='bold 72px monospace';ctx.textAlign='center';
+        ctx.shadowColor='#00ff00';ctx.shadowBlur=24;
+        ctx.fillText('NUCLEAR FOREST',W*0.5,H*0.42);
+        ctx.shadowBlur=0;
+        ctx.fillStyle='#55cc66';ctx.font='18px monospace';
+        ctx.fillText('WASD: move   MOUSE: look   SPACE: jump   SHIFT: sprint',W*0.5,H*0.42+42);
+
+        if(Math.sin(Date.now()*0.003)>0){
+            ctx.fillStyle='#aaffaa';ctx.font='bold 26px monospace';
+            ctx.fillText('PRESS ENTER OR CLICK TO PLAY',W*0.5,H*0.65);
+        }
+        ctx.textAlign='left';
+    },
+    renderModeSelect(){
+        var ctx=this.ctx,W=this.canvas.width,H=this.canvas.height;
+        ctx.clearRect(0,0,W,H);
+        ctx.fillStyle='rgba(0,10,0,0.95)';ctx.fillRect(0,0,W,H);
+        ctx.fillStyle='#22ff44';ctx.font='bold 36px monospace';ctx.textAlign='center';
+        ctx.fillText('CHOOSE YOUR MODE',W*0.5,H*0.28);
+
+        var cardW=280,cardH=160,gap=40;
+        var cx1=W*0.5-cardW-gap*0.5, cx2=W*0.5+gap*0.5;
+        var cy=H*0.42;
+
+        function card(x,y,title,lines,color,keyLabel){
+            ctx.fillStyle='rgba(255,255,255,0.06)';
+            ctx.fillRect(x,y,cardW,cardH);
+            ctx.strokeStyle=color; ctx.lineWidth=2;
+            ctx.strokeRect(x,y,cardW,cardH);
+            ctx.fillStyle=color; ctx.font='bold 26px monospace';
+            ctx.fillText(title, x+cardW*0.5, y+38);
+            ctx.font='13px monospace'; ctx.fillStyle='#cddccd';
+            lines.forEach(function(l,i){ ctx.fillText(l, x+cardW*0.5, y+68+i*20); });
+            ctx.fillStyle=color; ctx.font='bold 16px monospace';
+            ctx.fillText(keyLabel, x+cardW*0.5, y+cardH-16);
+        }
+
+        card(cx1,cy,'PEACEFUL',
+            ['No monsters, no radiation.','Explore, watch wildlife,','walk the mountains freely.'],
+            '#66ccff','PRESS 1');
+        card(cx2,cy,'SURVIVAL',
+            ['Predators can kill you.','Day/night cycle.','Radiation bubble at the plant.'],
+            '#ff6644','PRESS 2');
+
+        if(Math.sin(Date.now()*0.003)>0){
+            ctx.fillStyle='#aaffaa';ctx.font='bold 18px monospace';
+            ctx.fillText('CLICK TO ENABLE MOUSE LOOK, THEN PRESS 1 OR 2',W*0.5,cy+cardH+50);
+        }
+        ctx.textAlign='left';
+    }
+};
+
+// ═══════════════════════════════════════════════════════════════
+// DAY / NIGHT
+// ═══════════════════════════════════════════════════════════════
+var DayNight = {
+    time:8.0,
+    update(dt,scene,sunLight,ambientLight,renderer){
+        this.time+=dt/60; if(this.time>=24)this.time-=24;
+        var t=this.time,si;
+        if(t>=6&&t<=18){var noon=1-Math.abs(t-12)/6;si=0.1+0.9*noon;}else{si=0.1;}
+        if(sunLight){
+            sunLight.intensity=si;
+            var ang=((t-6)/12)*Math.PI;
+            sunLight.position.set(Math.cos(ang)*500,Math.abs(Math.sin(ang))*500,0);
+        }
+        if(ambientLight)ambientLight.intensity=this.isNight()?0.05:0.3;
+        var sky=this.getSkyColor();
+        if(renderer)renderer.setClearColor(sky);
+        if(scene&&scene.fog)scene.fog.color.copy(sky);
+    },
+    isNight(){return this.time<5.5||this.time>20.5;},
+    getSkyColor(){
+        var t=this.time;
+        var night=new THREE.Color(0x050515),dawn=new THREE.Color(0xff6633);
+        var day=new THREE.Color(0x87ceeb),dusk=new THREE.Color(0x4433aa);
+        var c=new THREE.Color();
+        if(t<5.5) c.copy(night);
+        else if(t<6.0) c.lerpColors(night,dawn,(t-5.5)/0.5);
+        else if(t<8.0) c.lerpColors(dawn,day,(t-6.0)/2.0);
+        else if(t<16.0) c.copy(day);
+        else if(t<18.0) c.lerpColors(day,dusk,(t-16.0)/2.0);
+        else if(t<20.5) c.lerpColors(dusk,night,(t-18.0)/2.5);
+        else c.copy(night);
+        return c;
+    }
+};
+
+// ═══════════════════════════════════════════════════════════════
+// MAIN GAME SETUP — runs only after the player picks a mode, so all
+// world generation happens after the title/mode screens, not before.
+// ═══════════════════════════════════════════════════════════════
+async function startGame(chosenMode) {
+    GameMode = chosenMode;
+    document.getElementById('loading').style.display = 'flex';
+
+    function setLoad(msg, pct) {
+        document.getElementById('load-msg').textContent = msg;
+        document.getElementById('bar-inner').style.width = pct + '%';
+    }
+
+    await new Promise(r => setTimeout(r, 50)); // yield to paint loading screen
+
+    // Three.js scene
+    var scene = new THREE.Scene();
+    scene.fog = new THREE.Fog(0x87ceeb, 400, 5000);
+
+    var camera = new THREE.PerspectiveCamera(70, window.innerWidth/window.innerHeight, 0.2, 5800);
+    camera.position.set(WORLD_CENTER, 30, WORLD_CENTER);
+
+    var renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    // Shadow mapping on, but cheap: ONLY the player's body casts a shadow
+    // (trees/rocks/animals all stay castShadow=false), and the shadow
+    // camera is a tight box that follows the player, so the depth pass is
+    // one small mesh into a 1024px map — negligible cost.
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFShadowMap;
+    document.body.appendChild(renderer.domElement);
+
+    window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth/window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    // Lighting
+    var sunLight = new THREE.DirectionalLight(0xfff5e0, 1.0);
+    sunLight.position.set(500, 500, 0);
+    sunLight.castShadow = true;
+    sunLight.shadow.mapSize.set(1024, 1024);
+    sunLight.shadow.camera.near = 1;
+    sunLight.shadow.camera.far = 1200;
+    sunLight.shadow.camera.left = -30; sunLight.shadow.camera.right = 30;
+    sunLight.shadow.camera.top  =  30; sunLight.shadow.camera.bottom = -30;
+    scene.add(sunLight);
+    scene.add(sunLight.target);
+
+    var ambientLight = new THREE.AmbientLight(0x404060, 0.3);
+    scene.add(ambientLight);
+
+    // ── Heightmap ──────────────────────────────────────────
+    setLoad('Generating terrain...', 10);
+    await new Promise(r => setTimeout(r, 20));
+    // Randomized per session so the mountain layout AND density (sometimes
+    // heavily mountainous, sometimes just a couple of distant peaks,
+    // sometimes pure forest around the plant) actually vary between plays.
+    var SEED = (Math.random() * 4294967295) >>> 0;
+    var hmap = generateHeightmap(SEED);
+    var SIZE = GRID_SIZE, WORLD = WORLD_SIZE;
+
+    // Height query — matches the mesh's ACTUAL triangulation exactly.
+    // PlaneGeometry splits each quad along the b-d diagonal (corners
+    // a=(0,0) b=(0,1) c=(1,1) d=(1,0), faces are a-b-d and b-c-d), which
+    // is a flat-shaded planar surface, NOT the curved bilinear surface
+    // pure bilinear interpolation assumes. Wherever a quad's 4 corners
+    // aren't coplanar (constant on rugged mountain terrain), bilinear
+    // height disagreed with the rendered surface — letting the player
+    // clip into or float above ground. This samples the same triangle
+    // the renderer draws, so collision and visuals always agree.
+    function getHeightAt(wx, wz) {
+        var gx = (wx / WORLD) * (SIZE - 1);
+        var gz = (wz / WORLD) * (SIZE - 1);
+        gx = Math.max(0, Math.min(SIZE - 2, gx));
+        gz = Math.max(0, Math.min(SIZE - 2, gz));
+        var ix = Math.floor(gx), iz = Math.floor(gz);
+        var fx = gx - ix, fz = gz - iz;
+        var h00 = hmap[iz*SIZE+ix];       // a = (0,0)
+        var h01 = hmap[(iz+1)*SIZE+ix];   // b = (0,1)
+        var h11 = hmap[(iz+1)*SIZE+ix+1]; // c = (1,1)
+        var h10 = hmap[iz*SIZE+ix+1];     // d = (1,0)
+        if (fx + fz <= 1) {
+            // Triangle a-b-d
+            return h00 + fx*(h10-h00) + fz*(h01-h00);
+        } else {
+            // Triangle b-c-d
+            var gx2 = 1-fx, gz2 = 1-fz;
+            return h11 + gx2*(h01-h11) + gz2*(h10-h11);
+        }
+    }
+
+    // ── Terrain mesh ───────────────────────────────────────
+    setLoad('Building terrain mesh...', 25);
+    await new Promise(r => setTimeout(r, 20));
+    var terrainMesh = buildTerrainMesh(hmap);
+    // PlaneGeometry is centered at the origin (spans -1024..+1024), but every
+    // other system here (trees, rivers, player, plant, spawn search,
+    // getHeightAt) assumes world coords span 0..2048. Without this shift the
+    // rendered ground and the collision heightmap sample two different
+    // physical locations offset by (1024,1024) — the actual cause of the
+    // player falling/clipping through terrain that "looks" solid nearby.
+    terrainMesh.position.set(WORLD/2, 0, WORLD/2);
+    scene.add(terrainMesh);
+
+    // ── Dirt paths ─────────────────────────────────────────
+    setLoad('Carving trails...', 38);
+    await new Promise(r => setTimeout(r, 20));
+    var dirtPaths = generateDirtPaths(hmap, SEED);
+    var dirtPathMeshes = [];
+    for (var dpi = 0; dpi < dirtPaths.length; dpi++) {
+        var dpMesh = buildDirtPathMesh(dirtPaths[dpi], SEED + dpi);
+        if (dpMesh) { scene.add(dpMesh); dirtPathMeshes.push(dpMesh); }
+    }
+
+    // ── Trees (Instanced — one draw call per component type) ──
+    setLoad('Planting forest...', 40);
+    await new Promise(r => setTimeout(r, 20));
+    var treeDefsRaw = generateTrees(hmap, SEED);
+
+    // Clear a walkable corridor along each dirt path — trees can't grow
+    // through the trail itself.
+    var PATH_CLEAR_R = 5.5;
+    var treeDefs = treeDefsRaw.filter(function(td){
+        for (var dpi2 = 0; dpi2 < dirtPaths.length; dpi2++) {
+            var pth = dirtPaths[dpi2];
+            for (var ppi = 0; ppi < pth.length; ppi += 2) { // every other sample is plenty dense
+                var dx = td.x - pth[ppi].x, dz = td.z - pth[ppi].z;
+                if (dx*dx + dz*dz < PATH_CLEAR_R*PATH_CLEAR_R) return false;
+            }
+        }
+        return true;
+    });
+    var treePositions = treeDefs.map(function(t){return{x:t.x,z:t.z};});
+
+    // ── Spatial chunking for view-distance culling ──────────────────
+    // Everything below (trees + leaves) is built into a grid of chunks
+    // instead of one giant world-spanning mesh per component. Each chunk
+    // is a THREE.Group we toggle .visible on/off every frame based on
+    // distance to the player — so geometry far outside what you can
+    // actually see is skipped by the GPU entirely instead of being
+    // rasterized (and clipped) every frame regardless of camera position.
+    var CHUNK_SIZE = 480;
+    var VIEW_DISTANCE = 5000;      // matches the fog limit — if you can see the ground there, its trees/rocks render too
+    function chunkKeyFor(x,z){ return Math.floor(x/CHUNK_SIZE)+'_'+Math.floor(z/CHUNK_SIZE); }
+    var chunkGroups = {}; // key -> {group, cx, cz}
+    function getChunkGroup(x,z){
+        var key = chunkKeyFor(x,z);
+        var cg = chunkGroups[key];
+        if (!cg) {
+            var kx = Math.floor(x/CHUNK_SIZE), kz = Math.floor(z/CHUNK_SIZE);
+            cg = { group: new THREE.Group(), cx: (kx+0.5)*CHUNK_SIZE, cz: (kz+0.5)*CHUNK_SIZE };
+            scene.add(cg.group);
+            chunkGroups[key] = cg;
+        }
+        return cg;
+    }
+
+    // Group trees by (type, chunk)
+    var byTypeChunk = {0:{},1:{},2:{},3:{},4:{}};
+    treeDefs.forEach(function(td){
+        var key = chunkKeyFor(td.x, td.z);
+        var byChunk = byTypeChunk[td.type];
+        if (!byChunk[key]) byChunk[key] = [];
+        byChunk[key].push(td);
+    });
+
+    var dummy = new THREE.Object3D();
+    var treeColliders = []; // {x,z,r} for collision — independent of rendering chunks
+
+    function iMesh(geo, color, count) {
+        var m = new THREE.InstancedMesh(geo, new THREE.MeshLambertMaterial({color:color}), count);
+        m.castShadow = false; m.receiveShadow = false; return m;
+    }
+    function setInst(mesh, i, td, localY) {
+        dummy.position.set(td.x, td.y + localY * td.scale, td.z);
+        dummy.rotation.set(0, td.rotY, 0);
+        dummy.scale.setScalar(td.scale);
+        dummy.updateMatrix();
+        mesh.setMatrixAt(i, dummy.matrix);
+    }
+    function finalize(mesh, group) { mesh.instanceMatrix.needsUpdate = true; group.add(mesh); }
+
+    // Per-type geometry/color definitions — {localY, geo, color}
+    var TREE_DEFS = {
+        0: [ [2,   new THREE.CylinderGeometry(0.25,0.35,4,6), 0x5c3a1e],
+             [5.5, new THREE.ConeGeometry(2.5,4,6),   0x1a4a20],
+             [7.5, new THREE.ConeGeometry(2.0,3.5,6), 0x1a4a20],
+             [9.2, new THREE.ConeGeometry(1.5,3,6),   0x1a4a20] ],
+        1: [ [2.5,  new THREE.CylinderGeometry(0.38,0.52,5,7), 0x6b4226],
+             [7.25, new THREE.ConeGeometry(3.8,4.5,7), 0x2d6e1f] ],
+        2: [ [3,    new THREE.CylinderGeometry(0.12,0.20,6,5), 0x888888] ],
+        3: [ [3.5,  new THREE.CylinderGeometry(0.15,0.22,7,7), 0xe8e0d0],
+             [9.0,  new THREE.ConeGeometry(2.8,3.5,7), 0x5ab030] ],
+        4: [ [4.5,  new THREE.CylinderGeometry(0.52,0.72,9,7), 0x3e2208],
+             [9.5,  new THREE.ConeGeometry(3.8,5.5,7), 0x0f3a15],
+             [12.5, new THREE.ConeGeometry(3.0,5.0,7), 0x0f3a15],
+             [15.2, new THREE.ConeGeometry(2.2,4.0,7), 0x0f3a15],
+             [17.5, new THREE.ConeGeometry(1.4,3.0,7), 0x0f3a15] ]
+    };
+    var TREE_COLLIDER_R = {0:0.8, 1:1.0, 2:0.4, 3:0.7, 4:1.2};
+
+    Object.keys(byTypeChunk).forEach(function(typeStr){
+        var type = +typeStr;
+        var comps = TREE_DEFS[type];
+        var byChunk = byTypeChunk[type];
+        Object.keys(byChunk).forEach(function(key){
+            var ts = byChunk[key], n = ts.length; if (!n) return;
+            var cg = getChunkGroup(ts[0].x, ts[0].z);
+            var meshes = comps.map(function(c){ return iMesh(c[1], c[2], n); });
+            ts.forEach(function(td,i){
+                for (var ci=0; ci<comps.length; ci++) setInst(meshes[ci], i, td, comps[ci][0]);
+                treeColliders.push({x:td.x, z:td.z, r:TREE_COLLIDER_R[type]*td.scale});
+            });
+            meshes.forEach(function(m){ finalize(m, cg.group); });
+        });
+    });
+
+    // Spatial grid for fast collision lookups (unrelated to rendering chunks)
+    var GRID_CELL = 64;
+    var spatialGrid = {};
+    treeColliders.forEach(function(tc, i) {
+        var key = Math.floor(tc.x/GRID_CELL)+'_'+Math.floor(tc.z/GRID_CELL);
+        if (!spatialGrid[key]) spatialGrid[key] = [];
+        spatialGrid[key].push(i);
+    });
+
+    // (Floating leaf-cluster particles removed — tree canopies are the
+    // solid cones only; dead-leaf ground litter below is kept.)
+
+    // ── Rocks — vertex-perturbed boulder variants, chunked, minable ──
+    setLoad('Placing rocks...', 68);
+    await new Promise(r => setTimeout(r, 20));
+    var rockDefs = generateRocks(hmap, SEED);
+    var rockGeos = makeRockGeometries(SEED, 6);
+    var rockMat = new THREE.MeshLambertMaterial({color:0x716b60});
+    var rdummy = new THREE.Object3D();
+    var minableRocks = []; // {x, z, y, hp} — punch these to mine stone
+    // Bucket by (chunk, variant) so each chunk gets one InstancedMesh per shape
+    var rockBuckets = {};
+    rockDefs.forEach(function(rd){
+        var key = chunkKeyFor(rd.x, rd.z) + '|' + rd.variant;
+        if (!rockBuckets[key]) rockBuckets[key] = [];
+        rockBuckets[key].push(rd);
+    });
+    Object.keys(rockBuckets).forEach(function(key){
+        var rs = rockBuckets[key], n = rs.length; if (!n) return;
+        var variant = +key.split('|')[1];
+        var cg = getChunkGroup(rs[0].x, rs[0].z);
+        var rockMesh = new THREE.InstancedMesh(rockGeos[variant], rockMat, n);
+        rockMesh.castShadow = false;
+        rs.forEach(function(rd,i){
+            rdummy.position.set(rd.x, rd.y + 0.35*rd.scale, rd.z);
+            rdummy.rotation.set(rd.tilt, rd.rotY, rd.tilt*0.6);
+            rdummy.scale.set(rd.scale, rd.scale*0.75, rd.scale);
+            rdummy.updateMatrix();
+            rockMesh.setMatrixAt(i, rdummy.matrix);
+            treeColliders.push({x:rd.x, z:rd.z, r:0.55*rd.scale});
+            minableRocks.push({x:rd.x, z:rd.z, y:rd.y, hits:0, stoneLeft:2+Math.floor(rd.scale*2)});
+        });
+        rockMesh.instanceMatrix.needsUpdate = true;
+        cg.group.add(rockMesh);
+    });
+    // Rebuild the collision spatial grid now that rocks contribute colliders too
+    spatialGrid = {};
+    treeColliders.forEach(function(tc, i) {
+        var key = Math.floor(tc.x/GRID_CELL)+'_'+Math.floor(tc.z/GRID_CELL);
+        if (!spatialGrid[key]) spatialGrid[key] = [];
+        spatialGrid[key].push(i);
+    });
+
+    // ── Tiny pickable stones ──
+    var tinyRocks = generateTinyRocks(hmap, SEED);
+    var tinyByChunk = {};
+    tinyRocks.forEach(function(tr, i){
+        tr.globalIdx = i;
+        var key = chunkKeyFor(tr.x, tr.z);
+        if (!tinyByChunk[key]) tinyByChunk[key] = [];
+        tinyByChunk[key].push(tr);
+    });
+    var tinyGeo = rockGeos[0];
+    var tinyMat = new THREE.MeshLambertMaterial({color:0x8a847a});
+    Object.keys(tinyByChunk).forEach(function(key){
+        var ts2 = tinyByChunk[key], n = ts2.length; if (!n) return;
+        var cg = getChunkGroup(ts2[0].x, ts2[0].z);
+        var mesh = new THREE.InstancedMesh(tinyGeo, tinyMat, n);
+        mesh.castShadow = false;
+        ts2.forEach(function(tr,i){
+            rdummy.position.set(tr.x, tr.y + 0.08, tr.z);
+            rdummy.rotation.set(0, tr.rotY, 0);
+            rdummy.scale.setScalar(tr.scale);
+            rdummy.updateMatrix();
+            mesh.setMatrixAt(i, rdummy.matrix);
+            tr.mesh = mesh; tr.instIdx = i; // so pickup can zero this instance out
+        });
+        mesh.instanceMatrix.needsUpdate = true;
+        cg.group.add(mesh);
+    });
+
+    // ── Dead leaf litter under the canopy ──
+    var leafLitter = generateDeadLeaves(treeDefs, SEED);
+    var litterByChunk = {};
+    leafLitter.forEach(function(lf){
+        var key = chunkKeyFor(lf.x, lf.z);
+        if (!litterByChunk[key]) litterByChunk[key] = [];
+        litterByChunk[key].push(lf);
+    });
+    var litterGeo = new THREE.PlaneGeometry(0.9, 1.2);
+    litterGeo.rotateX(-Math.PI/2); // lie flat on the ground
+    var litterTex = makeLeafTexture();
+    var litterMat = new THREE.MeshLambertMaterial({map:litterTex, transparent:true, alphaTest:0.4, side:THREE.DoubleSide});
+    Object.keys(litterByChunk).forEach(function(key){
+        var ls = litterByChunk[key], n = ls.length; if (!n) return;
+        var cg = getChunkGroup(ls[0].x, ls[0].z);
+        var mesh = new THREE.InstancedMesh(litterGeo, litterMat, n);
+        mesh.castShadow = false;
+        var lfColor = new THREE.Color();
+        ls.forEach(function(lf,i){
+            rdummy.position.set(lf.x, lf.y + 0.06, lf.z);
+            rdummy.rotation.set(0, lf.rotY, 0);
+            rdummy.scale.setScalar(lf.scale);
+            rdummy.updateMatrix();
+            mesh.setMatrixAt(i, rdummy.matrix);
+            // orange → brown range per leaf
+            lfColor.setHSL(0.07 + lf.tint*0.04, 0.6, 0.28 + lf.tint*0.18);
+            mesh.setColorAt(i, lfColor);
+        });
+        mesh.instanceMatrix.needsUpdate = true;
+        if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+        cg.group.add(mesh);
+    });
+
+    // ── Rivers ─────────────────────────────────────────────
+    setLoad('Carving rivers...', 70);
+    await new Promise(r => setTimeout(r, 20));
+    var riverPaths = generateRivers(hmap, SEED);
+    var riverMeshes = [];
+    for (var ri = 0; ri < riverPaths.length; ri++) {
+        var rm = buildRiverMesh(riverPaths[ri]);
+        if (rm) { scene.add(rm); riverMeshes.push(rm); }
+    }
+
+    // ── River reflections — an environment cubemap captured from the
+    // scene (sky, mountains, forest) mapped onto a glossy water material.
+    // The cubemap re-captures every few seconds so reflections track the
+    // day/night sky without paying 6 extra scene renders per frame.
+    var reflectionRT  = new THREE.WebGLCubeRenderTarget(128);
+    var reflectionCam = new THREE.CubeCamera(1, 4500, reflectionRT);
+    reflectionCam.position.set(WORLD_CENTER, getHeightAt(WORLD_CENTER, WORLD_CENTER) + 25, WORLD_CENTER);
+    scene.add(reflectionCam);
+    var riverWaterMat = new THREE.MeshPhongMaterial({
+        color: 0x336699,
+        specular: 0xffffff,
+        shininess: 140,
+        transparent: true,
+        opacity: 0.8,
+        side: THREE.DoubleSide,
+        envMap: reflectionRT.texture,
+        reflectivity: 0.55,
+        combine: THREE.MixOperation
+    });
+    riverMeshes.forEach(function(rm2){ rm2.material = riverWaterMat; });
+    var lastReflectionUpdate = -Infinity;
+
+    // ── Player shadow body — an invisible capsule that casts the player's
+    // shadow onto the ground. colorWrite/depthWrite off = never drawn to
+    // screen (you don't see a box in first person), but the shadow depth
+    // pass still includes it.
+    var shadowBodyMat = new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false });
+    var playerShadowBody = new THREE.Mesh(new THREE.BoxGeometry(0.7, 1.7, 0.5), shadowBodyMat);
+    playerShadowBody.castShadow = true;
+    scene.add(playerShadowBody);
+
+    // ── Nuclear plant — reactor + twin cooling towers + industrial yard ──
+    var plantBaseY = getHeightAt(WORLD_CENTER, WORLD_CENTER);
+    var plantGroup = new THREE.Group();
+    var reactorMat = new THREE.MeshLambertMaterial({color:0x8899a0});
+    var domeMat    = new THREE.MeshLambertMaterial({color:0xaab4bb});
+    var towerMat   = new THREE.MeshLambertMaterial({color:0xccc9c2});
+    var glowMat    = new THREE.MeshLambertMaterial({color:0x225522, emissive:0x00ff44, emissiveIntensity:0.6});
+
+    // Paved yard pad (flattens the visual footprint like a graded industrial site)
+    var padGeo = new THREE.PlaneGeometry(170,170);
+    padGeo.rotateX(-Math.PI/2);
+    var pad = new THREE.Mesh(padGeo, new THREE.MeshLambertMaterial({color:0x54534c}));
+    pad.position.y = 0.12;
+    plantGroup.add(pad);
+
+    // Main reactor building
+    var reactorBody = new THREE.Mesh(new THREE.CylinderGeometry(22,22,30,16), reactorMat);
+    reactorBody.position.set(0,15,0);
+    plantGroup.add(reactorBody);
+    var reactorDome = new THREE.Mesh(new THREE.SphereGeometry(22,16,10,0,Math.PI*2,0,Math.PI*0.5), domeMat);
+    reactorDome.position.set(0,30,0);
+    plantGroup.add(reactorDome);
+
+    // Twin cooling towers (hyperboloid-ish via cone+cylinder stack)
+    var towerOffsets = [[-45,-10],[45,15]];
+    var towerTopY = 55; // world-local Y of the tower rim, used by steam sprites below
+    towerOffsets.forEach(function(off){
+        var towerBase = new THREE.Mesh(new THREE.CylinderGeometry(16,20,55,14), towerMat);
+        towerBase.position.set(off[0],27,off[1]);
+        plantGroup.add(towerBase);
+        var towerTop = new THREE.Mesh(new THREE.CylinderGeometry(13,16,10,14), towerMat);
+        towerTop.position.set(off[0],towerTopY,off[1]);
+        plantGroup.add(towerTop);
+    });
+
+    // Glowing core visible through the dome
+    var core = new THREE.Mesh(new THREE.SphereGeometry(6,10,8), glowMat);
+    core.position.set(0,30,0);
+    plantGroup.add(core);
+
+    // Small support/administration buildings scattered around the yard
+    var supportBuildingOffsets = [[-62,42],[58,-46],[-8,68],[64,58]];
+    supportBuildingOffsets.forEach(function(p){
+        var bldg = new THREE.Mesh(new THREE.BoxGeometry(14,7,10), new THREE.MeshLambertMaterial({color:0x9c988c}));
+        bldg.position.set(p[0],3.5,p[1]);
+        plantGroup.add(bldg);
+        var roof = new THREE.Mesh(new THREE.BoxGeometry(15,1,11), new THREE.MeshLambertMaterial({color:0x4a4944}));
+        roof.position.set(p[0],7.5,p[1]);
+        plantGroup.add(roof);
+    });
+
+    // Solid-body colliders for the plant — so the reactor, towers, and
+    // support buildings block the player instead of being walk-through.
+    var plantColliders = [{ x: WORLD_CENTER, z: WORLD_CENTER, r: 24 }]; // reactor building
+    towerOffsets.forEach(function(off){ plantColliders.push({ x: WORLD_CENTER+off[0], z: WORLD_CENTER+off[1], r: 21 }); });
+    supportBuildingOffsets.forEach(function(off){ plantColliders.push({ x: WORLD_CENTER+off[0], z: WORLD_CENTER+off[1], r: 9 }); });
+
+    // Chain-link perimeter fence (instanced posts around the yard square)
+    var FENCE_HALF = 80, FENCE_STEP = 9;
+    var fencePts = [];
+    for (var fx=-FENCE_HALF; fx<=FENCE_HALF; fx+=FENCE_STEP) { fencePts.push([fx,-FENCE_HALF]); fencePts.push([fx,FENCE_HALF]); }
+    for (var fz=-FENCE_HALF+FENCE_STEP; fz<FENCE_HALF; fz+=FENCE_STEP) { fencePts.push([-FENCE_HALF,fz]); fencePts.push([FENCE_HALF,fz]); }
+    var fenceMesh = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.15,0.15,2.6,5), new THREE.MeshLambertMaterial({color:0x2e2e2e}), fencePts.length);
+    var fDummy = new THREE.Object3D();
+    fencePts.forEach(function(p,i){ fDummy.position.set(p[0],1.3,p[1]); fDummy.updateMatrix(); fenceMesh.setMatrixAt(i, fDummy.matrix); });
+    fenceMesh.instanceMatrix.needsUpdate = true;
+    plantGroup.add(fenceMesh);
+
+    plantGroup.position.set(WORLD_CENTER, plantBaseY, WORLD_CENTER);
+    scene.add(plantGroup);
+
+    var plantLight = new THREE.PointLight(0x00ff44, 3.0, 220);
+    plantLight.position.set(WORLD_CENTER, plantBaseY+30, WORLD_CENTER);
+    scene.add(plantLight);
+
+    // ── Soft particle texture, shared by steam plumes and radiation mist ──
+    function makeSmokeTexture(hex) {
+        var size = 64;
+        var cnv = document.createElement('canvas');
+        cnv.width = cnv.height = size;
+        var cctx = cnv.getContext('2d');
+        var grad = cctx.createRadialGradient(size/2,size/2,0,size/2,size/2,size/2);
+        grad.addColorStop(0,   'rgba('+hex+',0.85)');
+        grad.addColorStop(0.4, 'rgba('+hex+',0.45)');
+        grad.addColorStop(1,   'rgba('+hex+',0)');
+        cctx.fillStyle = grad;
+        cctx.fillRect(0,0,size,size);
+        return new THREE.CanvasTexture(cnv);
+    }
+    var smokeTex = makeSmokeTexture('255,255,255');
+    var steamSprites = [];
+    towerOffsets.forEach(function(off, ti){
+        for (var i = 0; i < 10; i++) {
+            var spr = new THREE.Sprite(new THREE.SpriteMaterial({map:smokeTex, transparent:true, depthWrite:false, opacity:0.5}));
+            spr.scale.set(8,8,1);
+            plantGroup.add(spr);
+            steamSprites.push({sprite:spr, baseX:off[0], baseZ:off[1], phase:(i/10)+ti*0.05});
+        }
+    });
+
+    // ── Radiation mist (SURVIVAL only) — a ring of drifting green fog
+    // sprites around the plant instead of a solid glowing sphere.
+    var RADIATION_RADIUS = 90; // world units — matches the danger-zone logic below
+    var mistTex = makeSmokeTexture('80,255,120');
+    var mistSprites = [];
+    var MIST_COUNT = 40;
+    for (var mi2 = 0; mi2 < MIST_COUNT; mi2++) {
+        var mspr = new THREE.Sprite(new THREE.SpriteMaterial({ map:mistTex, transparent:true, depthWrite:false, opacity:0.22 }));
+        mspr.scale.set(26,16,1);
+        mspr.visible = false; // toggled on with the game mode
+        scene.add(mspr);
+        mistSprites.push({
+            sprite: mspr,
+            angle: (mi2/MIST_COUNT) * Math.PI*2 + Math.random()*0.5,
+            radiusFrac: 0.55 + Math.random()*0.5, // spread between inner/outer edge of the danger radius
+            heightPhase: Math.random()*Math.PI*2,
+            baseY: plantBaseY + 2 + Math.random()*14,
+            driftSpeed: 0.06 + Math.random()*0.08
+        });
+    }
+
+    // ── Animals ────────────────────────────────────────────
+    setLoad('Spawning wildlife...', 85);
+    await new Promise(r => setTimeout(r, 20));
+    AnimalManager.init(scene, getHeightAt, treePositions);
+
+    // ── HUD ────────────────────────────────────────────────
+    HUD.init();
+
+    // ── Input ──────────────────────────────────────────────
+    MouseLook.init(renderer.domElement);
+    var keys = {};
+    document.addEventListener('keydown', e => { keys[e.code] = true; });
+    document.addEventListener('keyup',   e => { keys[e.code] = false; });
+
+    // ── Gathering & crafting ────────────────────────────────
+    // Punch (left click): trees give logs, boulders give stone.
+    // E: pick up a tiny rock off the ground. C: craft a knife
+    // from 4 logs + 1 stone (or tiny rock). Knife mines twice as fast.
+    var harvestTrees = treeDefs.map(function(td){
+        return { x: td.x, z: td.z, hits: 0, logsLeft: 3 };
+    });
+    var lastSwing = 0;
+    var camFwd = new THREE.Vector3();
+
+    // ── Breaking animation — debris chips that burst from whatever you
+    // hit (wood chips for trees, stone chips for rocks), fly outward,
+    // tumble, fall under gravity, and shrink away. Pooled meshes so
+    // punching never allocates at runtime.
+    var DEBRIS_POOL_SIZE = 48;
+    var debrisPool = [];
+    for (var dbi = 0; dbi < DEBRIS_POOL_SIZE; dbi++) {
+        var dm = new THREE.Mesh(
+            new THREE.BoxGeometry(0.16, 0.12, 0.16),
+            new THREE.MeshLambertMaterial({ color: 0xffffff })
+        );
+        dm.visible = false;
+        scene.add(dm);
+        debrisPool.push({ mesh: dm, vel: new THREE.Vector3(), spin: new THREE.Vector3(), life: 0, maxLife: 0 });
+    }
+    var debrisCursor = 0;
+    function spawnDebris(x, y, z, colorHex, count) {
+        for (var i = 0; i < count; i++) {
+            var d = debrisPool[debrisCursor];
+            debrisCursor = (debrisCursor + 1) % DEBRIS_POOL_SIZE;
+            d.mesh.visible = true;
+            d.mesh.material.color.setHex(colorHex);
+            d.mesh.position.set(x + (Math.random()-0.5)*0.5, y + (Math.random()-0.5)*0.6, z + (Math.random()-0.5)*0.5);
+            d.mesh.scale.setScalar(0.7 + Math.random()*0.7);
+            var ang = Math.random()*Math.PI*2;
+            d.vel.set(Math.cos(ang)*(1.5+Math.random()*2.5), 2.5+Math.random()*2.5, Math.sin(ang)*(1.5+Math.random()*2.5));
+            d.spin.set((Math.random()-0.5)*10, (Math.random()-0.5)*10, (Math.random()-0.5)*10);
+            d.maxLife = d.life = 0.55 + Math.random()*0.3;
+        }
+    }
+    function updateDebris(dt) {
+        for (var i = 0; i < DEBRIS_POOL_SIZE; i++) {
+            var d = debrisPool[i];
+            if (d.life <= 0) continue;
+            d.life -= dt;
+            if (d.life <= 0) { d.mesh.visible = false; continue; }
+            d.vel.y -= 12 * dt;
+            d.mesh.position.addScaledVector(d.vel, dt);
+            d.mesh.rotation.x += d.spin.x * dt;
+            d.mesh.rotation.y += d.spin.y * dt;
+            d.mesh.rotation.z += d.spin.z * dt;
+            d.mesh.scale.setScalar(Math.max(0.05, d.mesh.scale.x * (1 - 2.2*dt)));
+        }
+    }
+
+    function findPunchTarget(list, reach) {
+        camera.getWorldDirection(camFwd);
+        var best = null, bestDist = reach;
+        for (var i = 0; i < list.length; i++) {
+            var t = list[i];
+            var dx = t.x - Player.pos.x, dz = t.z - Player.pos.z;
+            var d = Math.sqrt(dx*dx + dz*dz);
+            if (d > reach) continue;
+            // must be roughly in front of the camera
+            if (d > 0.3 && (dx*camFwd.x + dz*camFwd.z) / d < 0.35) continue;
+            if (d < bestDist) { bestDist = d; best = t; }
+        }
+        return best;
+    }
+
+    document.addEventListener('mousedown', function(e){
+        if (e.button !== 0 || !MouseLook.locked || !Player.alive) return;
+        var now2 = performance.now()/1000;
+        if (now2 - lastSwing < 0.35) return; // swing cooldown
+        lastSwing = now2;
+
+        var tree = findPunchTarget(harvestTrees, 4.5);
+        if (tree && tree.logsLeft > 0) {
+            tree.hits++;
+            var trunkY = getHeightAt(tree.x, tree.z) + 1.4; // chest height on the trunk
+            if (tree.hits % 3 === 0) {
+                tree.logsLeft--;
+                Inventory.log++;
+                spawnDebris(tree.x, trunkY, tree.z, 0x6a4a26, 14); // big burst — the log breaks free
+                HUD.toast('+1 Log' + (tree.logsLeft === 0 ? ' (tree is bare)' : ''));
+            } else {
+                spawnDebris(tree.x, trunkY, tree.z, 0x6a4a26, 6); // wood chips per punch
+                HUD.toast('Punching tree... (' + (3 - tree.hits % 3) + ' more)', 0.9);
+            }
+            return;
+        }
+
+        var rock = findPunchTarget(minableRocks, 4.5);
+        if (rock && rock.stoneLeft > 0) {
+            var hitsNeeded = Inventory.knife > 0 ? 2 : 4;
+            rock.hits++;
+            if (rock.hits % hitsNeeded === 0) {
+                rock.stoneLeft--;
+                Inventory.stone++;
+                spawnDebris(rock.x, rock.y + 0.8, rock.z, 0x8a857c, 14); // big burst — stone comes loose
+                HUD.toast('+1 Stone' + (rock.stoneLeft === 0 ? ' (boulder depleted)' : ''));
+            } else {
+                spawnDebris(rock.x, rock.y + 0.8, rock.z, 0x8a857c, 6); // stone chips per hit
+                HUD.toast('Mining stone... (' + (hitsNeeded - rock.hits % hitsNeeded) + ' more)', 0.9);
+            }
+        }
+    });
+
+    var pickupDummy = new THREE.Object3D();
+    InventoryUI.init();
+    document.addEventListener('keydown', function(e){
+        // TAB always toggles the inventory screen; E also closes it when open
+        if (e.code === 'Tab') {
+            e.preventDefault();
+            if (Player.alive) InventoryUI.toggle();
+            return;
+        }
+        if (InventoryUI.open) {
+            if (e.code === 'KeyE') InventoryUI.toggle();
+            return;
+        }
+        if (!MouseLook.locked || !Player.alive) return;
+        if (e.code === 'KeyE') {
+            // pick up the nearest tiny rock on the ground
+            var best = null, bestD = 3.0;
+            for (var i = 0; i < tinyRocks.length; i++) {
+                var tr = tinyRocks[i];
+                if (tr.taken) continue;
+                var dx = tr.x - Player.pos.x, dz = tr.z - Player.pos.z;
+                var d = Math.sqrt(dx*dx + dz*dz);
+                if (d < bestD) { bestD = d; best = tr; }
+            }
+            if (best) {
+                best.taken = true;
+                pickupDummy.position.set(0, -9999, 0); // shove the instance out of sight
+                pickupDummy.scale.setScalar(0.0001);
+                pickupDummy.updateMatrix();
+                best.mesh.setMatrixAt(best.instIdx, pickupDummy.matrix);
+                best.mesh.instanceMatrix.needsUpdate = true;
+                Inventory.tinyRock++;
+                HUD.toast('+1 Tiny Rock');
+            }
+        }
+    });
+
+    // ── Player spawn — find a flat forested clearing near the plant,
+    //    hard-excluded from every mountain massif's footprint (not just
+    //    inferred from nearby height samples), and clear of the plant.
+    var massifsWorld = (hmap.massifs || []).map(function(m){
+        return { x: m.x*QUAD_SCALE, z: m.z*QUAD_SCALE, safeR: m.spread*QUAD_SCALE*1.35 + 260 };
+    });
+    var spawnPos = null;
+    for (var sAttempt = 0; sAttempt < 600 && !spawnPos; sAttempt++) {
+        var sAngle = Math.random() * Math.PI * 2;
+        var sRadius = 90 + Math.random() * 800;
+        var sx = Math.max(20, Math.min(WORLD_SIZE-20, WORLD_CENTER + Math.cos(sAngle)*sRadius));
+        var sz = Math.max(20, Math.min(WORLD_SIZE-20, WORLD_CENTER + Math.sin(sAngle)*sRadius));
+
+        var nearMassif = false;
+        for (var mi = 0; mi < massifsWorld.length; mi++) {
+            var mm = massifsWorld[mi];
+            var dmx = sx-mm.x, dmz = sz-mm.z;
+            if (Math.sqrt(dmx*dmx+dmz*dmz) < mm.safeR) { nearMassif = true; break; }
+        }
+        if (nearMassif) continue;
+
+        var sh = getHeightAt(sx, sz);
+        var distFromPlant = Math.sqrt((sx-WORLD_CENTER)*(sx-WORLD_CENTER) + (sz-WORLD_CENTER)*(sz-WORLD_CENTER));
+        if (sh <= 3 || sh >= 90 || distFromPlant <= 70) continue;
+
+        var flat = true;
+        for (var fAng = 0; fAng < 8 && flat; fAng++) {
+            var a = fAng/8*Math.PI*2;
+            var nh = getHeightAt(sx+Math.cos(a)*12, sz+Math.sin(a)*12);
+            if (Math.abs(nh - sh) > 8) flat = false;
+        }
+        if (flat) spawnPos = { x: sx, z: sz, h: sh };
+    }
+    if (!spawnPos) spawnPos = { x: WORLD_CENTER, z: WORLD_CENTER+96, h: getHeightAt(WORLD_CENTER, WORLD_CENTER+96) };
+    Player.pos.set(spawnPos.x, spawnPos.h + 10, spawnPos.z);
+    camera.position.copy(Player.pos);
+
+    setLoad('Ready!', 100);
+    await new Promise(r => setTimeout(r, 300));
+    document.getElementById('loading').style.display = 'none';
+
+    // Mode was already chosen on the DOM mode-select screen before this
+    // function ran, so just apply it to the mist visibility and go
+    // straight into gameplay — no in-engine title/mode-select states needed.
+    var survivalOn = (GameMode === 'SURVIVAL');
+    for (var mvi = 0; mvi < mistSprites.length; mvi++) mistSprites[mvi].sprite.visible = survivalOn;
+
+    var lastTime = performance.now() / 1000;
+
+    // ── Game loop ──────────────────────────────────────────
+    function loop() {
+        requestAnimationFrame(loop);
+        var now = performance.now() / 1000;
+        var dt = Math.min(now - lastTime, 0.05);
+        lastTime = now;
+
+        // Respawn
+        if (keys['KeyR'] && !Player.alive) {
+            Player.reset();
+            Player.pos.set(spawnPos.x, spawnPos.h+10, spawnPos.z);
+        }
+
+        // ── Update ──────────────────────────────────────────
+        Player.update(dt, camera, InventoryUI.open ? {} : keys, getHeightAt);
+        MouseLook.update(camera);
+
+        // Tree + plant-building collision — push player out of solid cylinders
+        (function(){
+            var PLAYER_R = 0.55;
+            var cx = Math.floor(Player.pos.x/GRID_CELL), cz = Math.floor(Player.pos.z/GRID_CELL);
+            for(var dz=-1;dz<=1;dz++){for(var dx=-1;dx<=1;dx++){
+                var cell=spatialGrid[(cx+dx)+'_'+(cz+dz)]; if(!cell)continue;
+                for(var i=0;i<cell.length;i++){
+                    var tc=treeColliders[cell[i]];
+                    var ex=Player.pos.x-tc.x, ez=Player.pos.z-tc.z;
+                    var d=Math.sqrt(ex*ex+ez*ez), minD=PLAYER_R+tc.r;
+                    if(d<minD&&d>0.001){var push=(minD-d)/d; Player.pos.x+=ex*push; Player.pos.z+=ez*push;}
+                }
+            }}
+            for (var pci = 0; pci < plantColliders.length; pci++) {
+                var pc = plantColliders[pci];
+                var epx=Player.pos.x-pc.x, epz=Player.pos.z-pc.z;
+                var pd=Math.sqrt(epx*epx+epz*epz), pMinD=PLAYER_R+pc.r;
+                if (pd<pMinD && pd>0.001) { var pPush=(pMinD-pd)/pd; Player.pos.x+=epx*pPush; Player.pos.z+=epz*pPush; }
+            }
+            camera.position.copy(Player.pos);
+        })();
+
+        DayNight.update(dt, scene, sunLight, ambientLight, renderer);
+
+        // View-distance culling — hide whole tree/leaf chunks that are too
+        // far from the player to matter, so the GPU never touches their
+        // geometry at all. This is what actually removes the "always
+        // render the whole world" cost the old single-mesh forest had.
+        var chunkKeys = Object.keys(chunkGroups);
+        for (var cgi = 0; cgi < chunkKeys.length; cgi++) {
+            var cg = chunkGroups[chunkKeys[cgi]];
+            var cdx = Player.pos.x - cg.cx, cdz = Player.pos.z - cg.cz;
+            var cdist = Math.sqrt(cdx*cdx + cdz*cdz);
+            cg.group.visible = cdist < (VIEW_DISTANCE + CHUNK_SIZE*0.75);
+        }
+
+        // Animal AI/mesh culling — animals simulate and render out to the
+        // distance where they'd still be visibly distinguishable; beyond
+        // that both the mesh and the AI state machine are skipped.
+        var ANIMAL_CULL_DIST = 500;
+        for (var aci = 0; aci < AnimalManager.animals.length; aci++) {
+            var acAnimal = AnimalManager.animals[aci];
+            if (!acAnimal.active) continue;
+            var acdx = Player.pos.x - acAnimal.pos.x, acdz = Player.pos.z - acAnimal.pos.z;
+            acAnimal.mesh.visible = (acdx*acdx + acdz*acdz) < ANIMAL_CULL_DIST*ANIMAL_CULL_DIST;
+        }
+        AnimalManager.update(dt, Player.pos, getHeightAt, scene, ANIMAL_CULL_DIST);
+        var animalDmg = AnimalManager.popDamage();
+        if (GameMode === 'SURVIVAL') Player.takeDamage(animalDmg);
+
+        // Breaking-animation debris (wood/stone chips from punching)
+        updateDebris(dt);
+
+        // River shimmer (shared water material — pulse it once, not per river)
+        riverWaterMat.opacity = 0.72 + 0.08 * Math.sin(now * 2);
+
+        // Refresh the river-reflection cubemap every few seconds from near
+        // the player (rivers hidden during capture to avoid self-reflection)
+        if (now - lastReflectionUpdate > 5) {
+            lastReflectionUpdate = now;
+            for (var rv = 0; rv < riverMeshes.length; rv++) riverMeshes[rv].visible = false;
+            reflectionCam.position.set(Player.pos.x, Player.pos.y + 15, Player.pos.z);
+            reflectionCam.update(renderer, scene);
+            for (var rv2 = 0; rv2 < riverMeshes.length; rv2++) riverMeshes[rv2].visible = true;
+        }
+
+        // Player shadow — keep the invisible shadow body under the camera,
+        // and keep the sun's tight shadow frustum centered on the player
+        // (the sun direction itself still comes from the day/night cycle).
+        playerShadowBody.position.set(Player.pos.x, Player.pos.y - 0.9, Player.pos.z);
+        playerShadowBody.rotation.y = MouseLook.yaw;
+        var sunDirLen = Math.sqrt(sunLight.position.x*sunLight.position.x + sunLight.position.y*sunLight.position.y + sunLight.position.z*sunLight.position.z) || 1;
+        sunLight.position.set(
+            Player.pos.x + sunLight.position.x/sunDirLen * 300,
+            Player.pos.y + Math.max(0.15, sunLight.position.y/sunDirLen) * 300,
+            Player.pos.z + sunLight.position.z/sunDirLen * 300
+        );
+        sunLight.target.position.copy(Player.pos);
+
+        // Plant glow pulse
+        plantLight.intensity = 1.5 + 0.5 * Math.sin(now * 3);
+
+        // Steam plumes — rise, drift, and fade in a loop
+        var steamCycle = 4.5;
+        for (var si = 0; si < steamSprites.length; si++) {
+            var s = steamSprites[si];
+            var t = ((now / steamCycle) + s.phase) % 1;
+            s.sprite.position.set(
+                s.baseX + Math.sin(t*6.283 + s.phase*10) * 3 * t,
+                towerTopY + t * 42,
+                s.baseZ + Math.cos(t*6.283 + s.phase*10) * 3 * t
+            );
+            s.sprite.scale.setScalar(6 + t*15);
+            s.sprite.material.opacity = 0.5 * (1-t) * (1-t) + 0.05;
+        }
+
+        // Radiation mist — slow-drifting fog ring around the plant (SURVIVAL only)
+        if (GameMode === 'SURVIVAL') {
+            for (var mi3 = 0; mi3 < mistSprites.length; mi3++) {
+                var ms = mistSprites[mi3];
+                var ang = ms.angle + now * ms.driftSpeed;
+                var r = RADIATION_RADIUS * ms.radiusFrac;
+                ms.sprite.position.set(
+                    WORLD_CENTER + Math.cos(ang) * r,
+                    ms.baseY + Math.sin(now*0.5 + ms.heightPhase) * 3,
+                    WORLD_CENTER + Math.sin(ang) * r
+                );
+            }
+        }
+
+        // Radiation bubble — SURVIVAL only. 10 continuous seconds inside the
+        // bubble before damage starts; leaving resets the clock. The HUD
+        // radiation bar shows progress toward that 10-second threshold.
+        if (GameMode === 'SURVIVAL') {
+            var distToPlant = dist2D(Player.pos, {x:WORLD_CENTER,z:WORLD_CENTER});
+            if (distToPlant < RADIATION_RADIUS) {
+                Player.inRadiationTimer += dt;
+                if (Player.inRadiationTimer >= 10) Player.takeDamage(2*dt);
+            } else {
+                Player.inRadiationTimer = Math.max(0, Player.inRadiationTimer - dt*2);
+            }
+            Player.radiation = Math.min(100, (Player.inRadiationTimer/10)*100);
+        } else {
+            Player.inRadiationTimer = 0;
+            Player.radiation = 0;
+        }
+
+        // ── Render ──────────────────────────────────────────
+        renderer.render(scene, camera);
+        var activeAnimals = AnimalManager.animals.filter(a=>a.active).length;
+        HUD.render(Player, now, activeAnimals);
+    }
+
+    loop();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// DOM SCREEN WIRING — title -> mode select -> startGame(mode)
+// ═══════════════════════════════════════════════════════════════
+document.getElementById('play-btn').addEventListener('click', function () {
+    document.getElementById('title-screen').style.display = 'none';
+    document.getElementById('mode-screen').style.display = 'flex';
+});
+document.getElementById('mode-peaceful').addEventListener('click', function () {
+    document.getElementById('mode-screen').style.display = 'none';
+    startGame('PEACEFUL');
+});
+document.getElementById('mode-survival').addEventListener('click', function () {
+    document.getElementById('mode-screen').style.display = 'none';
+    startGame('SURVIVAL');
+});
+</script>
+</body>
+</html>
